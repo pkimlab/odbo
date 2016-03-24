@@ -8,6 +8,7 @@ import subprocess
 import gzip
 import csv
 import re
+import time
 from collections import Counter
 
 from retrying import retry
@@ -57,6 +58,16 @@ def retry_database(fn):
     return r(fn)
 
 
+def rety_subprocess(fn):
+    r = retry(
+        retry_on_exception=lambda exc:
+            check_exception(exc, valid_exc=MySubprocessError),
+        wait_exponential_multiplier=1000,
+        wait_exponential_max=60000,
+        stop_max_attempt_number=7)
+    return r(fn)
+
+
 # %% Run system command either locally or over ssh
 class MySSHClient:
 
@@ -85,10 +96,11 @@ class MySubprocessError(subprocess.SubprocessError):
         self.returncode = returncode
 
 
+@rety_subprocess
 def run_command(system_command, host=None):
     """
     """
-    logger.info(system_command)
+    logger.debug(system_command)
     if host is not None:
         logger.debug("Running on host: '{}'".format(host))
         client = MySSHClient(host)
@@ -105,6 +117,12 @@ def run_command(system_command, host=None):
         returncode = sp.returncode
     # Process results
     if returncode != 0:
+        error_message = (
+            "Encountered an error: '{}'\n".format(output) +
+            "System command: '{}'\n".format(system_command) +
+            "Return code: {}".format(returncode)
+        )
+        logger.error(error_message)
         raise MySubprocessError(
             command=system_command,
             host=host,
@@ -230,12 +248,16 @@ def get_dtypes_for_file(path, snufflimit=int(1e8), **vargs):
 
 # %% Main functions
 @contextlib.contextmanager
-def uncompressed(filepath, keep_uncompressed=False):
+def uncompressed(filepath, keep_uncompressed=False, stg_host=None, force=True):
     filepath_tsv, ext = op.splitext(filepath)
+    if op.isfile(filepath_tsv) and not force:
+        logger.info("Uncompressed file already exits: {}".format(filepath_tsv))
+        yield filepath_tsv
+        return
     # File not compressed, do nothing
     if ext not in ['.gz', '.bz2']:
         logger.debug("File '{}' is not compressed...".format(filepath_tsv))
-        yield filepath_tsv
+        yield filepath
         return
     # File compressed
     try:
@@ -244,7 +266,16 @@ def uncompressed(filepath, keep_uncompressed=False):
             system_command = "gzip -dkf '{}'".format(filepath)
         elif ext == '.bz2':
             system_command = "bzip2 -dkf '{}'".format(filepath)
-        run_command(system_command, host=STG_HOST)
+        run_command(system_command, host=stg_host)
+        n_tries = 0
+        while n_tries < 10:
+            if op.isfile(filepath_tsv):
+                break
+            else:
+                print("FML")
+                time.sleep(n_tries * 10)
+                n_tries += 1
+        assert op.isfile(filepath_tsv)
         yield filepath_tsv
     except Exception as e:
         logger.error('{}: {}'.format(type(e), e))
@@ -254,6 +285,7 @@ def uncompressed(filepath, keep_uncompressed=False):
             logger.debug("Removing uncompressed file '{}'...".format(filepath_tsv))
             system_command = "rm -f '{}'".format(filepath_tsv)
             run_command(system_command)
+            assert not op.isfile(filepath_tsv)
 
 
 def get_tablename(path):
@@ -304,7 +336,7 @@ class _ToSQL:
     (much faster than pandas ``df.to_sql(...)``.
     """
 
-    def __init__(self, connection_string, shared_folder, storage_host=None, echo=True):
+    def __init__(self, connection_string, shared_folder, storage_host, echo=False):
         global STG_HOST
         self.connection_string = connection_string
         self.shared_folder = op.abspath(shared_folder)
@@ -341,8 +373,15 @@ class _ToMySQL(_ToSQL):
         return set(pd.read_sql_query('show databases;', self.engine)['Database'])
 
     @retry_database
-    def create_db_table(self, tablename, df, dtypes):
-        df[:0].to_sql(tablename, self.engine, dtype=dtypes, index=False, if_exists='replace')
+    def create_db_table(self, tablename, df, dtypes, empty=True, if_exists='replace'):
+        """Create a table `tablename` in the database.
+
+        If `empty` == True, do not load any data. Otherwise load the entire `df` into the created
+        table.
+        """
+        if empty:
+            df = df[:0]
+        df.to_sql(tablename, self.engine, dtype=dtypes, index=False, if_exists=if_exists)
 
     @staticmethod
     def parse_connection_string(connection_string):
@@ -420,7 +459,9 @@ class FileToMySQL(_ToMySQL):
 
 class DataFrameToMySQL(_ToMySQL):
 
-    def import_table(self, df, tablename, index_commands=None):
+    def import_table(
+            self, df, tablename, index_commands=None, use_temp_file=True, if_exists='replace',
+            force=True):
         """Load dataframe `df` into database table `tablename`.
 
         Parameters
@@ -432,19 +473,27 @@ class DataFrameToMySQL(_ToMySQL):
         index_commands : list of tuples
             List of tuples describing the indexes that should be created. E.g.
             `[(['a', 'b'], True), (['b', 'a'], False)]`
+        use_temp_file : bool
+            Whether to save data to a .tsv file first, or import directly.
+        if_exists : str
+            What to do if the specified table already exists in the database.
         """
         # Make sure there are no duplicate columns silently screwing everything up
         column_counts = Counter(df.columns)
         duplicate_columns = [x for x in column_counts.items() if x[1] > 1]
         if duplicate_columns:
             raise Exception("The following columns have duplicates: {}".format(duplicate_columns))
-        # Prepare filenames and save csv (use compression so we don't overload NFS)
-        bz2_filename = op.join(self.shared_folder, tablename + '.tsv.bz2')
-        df.to_csv(bz2_filename, compression='bz2', **MYSQL_CSV_OPTS)
         # Sniff out column dtypes and create a db table
         dtypes = get_column_dtypes(df)
-        self.create_db_table(tablename, df, dtypes)
-        with uncompressed(bz2_filename) as tsv_filename:
-            self.load_file_to_database(tsv_filename, tablename, 1)
+        self.create_db_table(tablename, df, dtypes, empty=use_temp_file, if_exists=if_exists)
+        # If `use_temp_file`, save a .tsv file and load it into the database
+        if use_temp_file:
+            bz2_filename = op.join(self.shared_folder, tablename + '.tsv.bz2')
+            if op.isfile(bz2_filename) and not force:
+                logger.info("bzip2 file already exists: {}".format(bz2_filename))
+            else:
+                df.to_csv(bz2_filename, compression='bz2', **MYSQL_CSV_OPTS)
+            with uncompressed(bz2_filename, stg_host=self.storage_host, force=force) as tsv_filename:
+                self.load_file_to_database(tsv_filename, tablename, 1)
         if index_commands:
             self.create_indices(tablename, index_commands)
