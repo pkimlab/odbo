@@ -1,2 +1,6 @@
-.spyderproject
-_*
+# Hidden files
+.*
+
+# Python develop
+__pycache__
+*.egg-info
