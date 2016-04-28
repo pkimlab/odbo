@@ -11,8 +11,8 @@ import re
 import time
 from collections import Counter
 
+import paramiko
 from retrying import retry
-from paramiko import SSHClient
 import pandas as pd
 import sqlalchemy as sa
 from sqlalchemy.dialects.mysql import INTEGER, DOUBLE, BOOLEAN, VARCHAR, MEDIUMTEXT
@@ -47,8 +47,7 @@ def check_exception(exc, valid_exc):
 
 
 def retry_database(fn):
-    """Decorator to keep probing the database untill you succeed.
-    """
+    """Decorator to keep probing the database untill you succeed."""
     r = retry(
         retry_on_exception=lambda exc:
             check_exception(exc, valid_exc=sa.exc.OperationalError),
@@ -68,23 +67,29 @@ def rety_subprocess(fn):
     return r(fn)
 
 
-# %% Run system command either locally or over ssh
+# Run system command either locally or over ssh
 class MySSHClient:
-
-    _ssh_clients = {}
 
     def __init__(self, ssh_host):
         self.ssh_host = ssh_host
-        if ssh_host not in MySSHClient._ssh_clients:
-            logger.debug("Initializing SSH client: '{}'".format(ssh_host))
-            client = SSHClient()
-            client.load_system_host_keys()
-            client.connect(ssh_host)
-            MySSHClient._ssh_clients[ssh_host] = client
-        self.client = MySSHClient._ssh_clients[ssh_host]
+        self.ssh = paramiko.SSHClient()
+        self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-    def exec_command(self, command, **varargs):
-        return self.client.exec_command(command, **varargs)
+    def __enter__(self):
+        logger.debug("Initializing SSH client: '{}'".format(self.ssh_host))
+        self.ssh.connect(self.ssh_host)
+        return self.ssh
+
+    def __exit__(self, exc_type, exc_value, exc_tb):
+        self.ssh.close()
+        if exc_type or exc_value or exc_tb:
+            import traceback
+            logger.error(exc_type)
+            logger.error(exc_value)
+            logger.error(traceback.print_tb(exc_tb))
+            return True
+        else:
+            return False
 
 
 class MySubprocessError(subprocess.SubprocessError):
@@ -103,10 +108,10 @@ def run_command(system_command, host=None):
     logger.debug(system_command)
     if host is not None:
         logger.debug("Running on host: '{}'".format(host))
-        client = MySSHClient(host)
-        stdin, stdout, stderr = client.exec_command(system_command)
-        output = stdout.read().decode() + stderr.read().decode()
-        returncode = stdout.channel.recv_exit_status()
+        with MySSHClient(host) as ssh:
+            stdin, stdout, stderr = ssh.exec_command(system_command)
+            output = stdout.read().decode() + stderr.read().decode()
+            returncode = stdout.channel.recv_exit_status()
     else:
         logger.debug("Running locally")
         sp = subprocess.run(
@@ -170,7 +175,8 @@ def get_column_dtypes(df):
 
 
 def get_overall_dtypes(values):
-    """
+    """.
+
     .. note::
 
         We need to str(...) dtypes because no two VARCHARS, etc. are the same.
@@ -208,7 +214,8 @@ def add_dtypes(dtypes):
 
 
 def get_dtypes_for_file(path, snufflimit=int(1e8), **vargs):
-    """
+    """.
+
     Parameters
     ----------
     vargs : dict
@@ -331,9 +338,9 @@ def vcf2tsv(filepath_vcf):
 
 # %% To SQL
 class _ToSQL:
-    """
-    Load and save data from a database using intermediary csv files
-    (much faster than pandas ``df.to_sql(...)``.
+    """Load and save data from a database using intermediary csv files.
+
+    Much faster than pandas ``df.to_sql(...)``.
     """
 
     def __init__(self, connection_string, shared_folder, storage_host, echo=False):
@@ -493,7 +500,8 @@ class DataFrameToMySQL(_ToMySQL):
                 logger.info("bzip2 file already exists: {}".format(bz2_filename))
             else:
                 df.to_csv(bz2_filename, compression='bz2', **MYSQL_CSV_OPTS)
-            with uncompressed(bz2_filename, stg_host=self.storage_host, force=force) as tsv_filename:
+            with uncompressed(bz2_filename, stg_host=self.storage_host, force=force) \
+                    as tsv_filename:
                 self.load_file_to_database(tsv_filename, tablename, 1)
         if index_commands:
             self.create_indices(tablename, index_commands)
