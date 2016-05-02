@@ -1,7 +1,7 @@
 import subprocess
 import shlex
 
-from csv2sql import csv2sql
+from datapkg import csv2sql
 
 
 # %%

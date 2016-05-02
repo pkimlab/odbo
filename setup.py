@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(
-    name='csv2sql',
+    name='datapkg',
     version="0.0.1",
-    packages=['csv2sql']
+    packages=['datapkg']
 )
