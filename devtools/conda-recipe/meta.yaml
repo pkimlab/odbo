@@ -1,0 +1,45 @@
+{% set version = "0.0.1" %}
+
+package:
+  name: datapkg
+  version: {{ version }}
+
+source:
+  path: ../../
+
+build:
+  number: 0
+
+requirements:
+  build:
+    # Basic python
+    - python
+  run:
+    # Basic python
+    - python
+    - pyyaml
+    - requests
+    - lxml
+    - pycurl
+    - paramiko
+    - biopython
+    - retrying
+    # Scientific python
+    - numpy
+    - scipy
+    - pandas
+    - scikit-learn
+    - sqlalchemy
+
+test:
+  requires:
+    - pytest
+    - pytest-runner
+    - pytest-cov
+  imports:
+    - datapkg
+
+about:
+  home: http://ostrokach.github.io/datapkg
+  license: MIT
+  summary: Helpful bioinformatics scripts.

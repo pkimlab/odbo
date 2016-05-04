@@ -1,6 +1,14 @@
-# Hidden files
-.*
+# Files
+*.pyc
+*.bak
 
-# Python develop
+# Folders
+_build
 __pycache__
 *.egg-info
+
+# Hidden
+.*
+!.gitignore
+!.travis.yml
+!.gitlab-ci.yml
