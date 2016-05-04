@@ -5,5 +5,6 @@ setup(
     version="0.0.1",
     author='Alexey Strokach',
     author_email='alex.strokach@utoronto.ca',
-    packages=['datapkg']
+    packages=['datapkg'],
+    entry_points={'console_scripts': ['datapkg=datapkg.__main__:main']},
 )

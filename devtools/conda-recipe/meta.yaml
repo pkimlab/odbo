@@ -9,6 +9,8 @@ source:
 
 build:
   number: 0
+  entry_points:
+    - datapkg = datapkg.__main__:main
 
 requirements:
   build:
@@ -29,7 +31,10 @@ requirements:
     - scipy
     - pandas
     - scikit-learn
+    # Database
     - sqlalchemy
+    - mysqlclient
+    - psycopg2
 
 test:
   requires:
@@ -38,6 +43,9 @@ test:
     - pytest-cov
   imports:
     - datapkg
+  commands:
+    - datapkg --help
+    - datapkg csv2sql --help
 
 about:
   home: http://ostrokach.github.io/datapkg
