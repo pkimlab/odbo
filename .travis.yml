@@ -2,42 +2,32 @@ sudo: false
 language: python
 python:
   - '3.5'
-services:
-  - mysql
-  - postgresql
-env:
-  global:
-    - CONDA_ENV="_traivs"
-    - TEST_DIR="${HOME}/_test"
 install:
-# - wget https://repo.continuum.io/anaconda/Anaconda3-latest-Linux-x86_64.sh -O anaconda.sh;
-  - wget --quiet https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O anaconda.sh;
+  # Install Anaconda
+  - wget --no-verbose -O anaconda.sh https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh;
   - bash anaconda.sh -b -p $HOME/anaconda
   - export PATH="$HOME/anaconda/bin:$PATH"
   - hash -r
   # Add relevant channels
   - conda config --set always_yes yes --set changeps1 no
-  - conda config --add channels omnia
   - conda config --add channels ostrokach
-  - conda config --add channels https://conda.binstar.org/t/$ANACONDA_TOKEN/ostrokach
-  - conda config --add channels salilab
-# - conda config --add channels r
+  - conda config --add channels defaults
+  - conda config --add channels conda-forge
+  - conda config --add channels omnia
   - conda config --add channels bioconda
-  # Install packages
   - conda info -a
+  # Install packages
   - conda update -q conda
   - conda install -q --yes conda-build
-  - pip install -q codecov pytest-cov
-before_script:
-  - echo "Before script" 
-  - conda create -n "$CONDA_ENV" 'python =3.5' 
+  - conda build -q devtools/conda-recipe/
 script:
-  - echo "Script" 
+  - source activate _test
+  - python setup.py test
 after_success:
-  - echo "After script" 
+  - echo "Success!"
+  - pip install codecov
   - codecov
 after_failure:
-  - echo "After failure"
+  - echo "Failure!"
 after_script:
-  - echo "After script"
-
+  - echo "X_X"
