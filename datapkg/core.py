@@ -269,10 +269,7 @@ def uncompressed(filepath, keep_uncompressed=False, stg_host=None, force=True):
     # File compressed
     try:
         logger.debug("Uncompressing file...".format(filepath))
-        if ext == '.gz':
-            system_command = "gzip -dkf '{}'".format(filepath)
-        elif ext == '.bz2':
-            system_command = "bzip2 -dkf '{}'".format(filepath)
+        system_command = "7za x -bd -o'{}' '{}'".format(op.dirname(filepath), filepath)
         run_command(system_command, host=stg_host)
         n_tries = 0
         while n_tries < 10:

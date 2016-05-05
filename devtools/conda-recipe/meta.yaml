@@ -35,6 +35,8 @@ requirements:
     - sqlalchemy
     - mysqlclient
     - psycopg2
+    # System tools
+    - p7zip
 
 test:
   requires:
@@ -45,7 +47,7 @@ test:
     - datapkg
   commands:
     - datapkg --help
-    - datapkg csv2sql --help
+    - datapkg file2db --help
 
 about:
   home: http://ostrokach.github.io/datapkg
