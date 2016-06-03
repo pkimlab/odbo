@@ -10,6 +10,13 @@ DataPkg is a tool to simplify the distribution of pandas DataFrames as CSV and d
 It analyses a text file and spits out SQL that creates a database table and loads data into that table.
 
 
+## Examples
+
+```bash
+mysql_install_db --no-defaults --basedir=$HOME/anaconda --datadir=$HOME/tmp/mysql_db
+mysqld --no-defaults --basedir=$HOME/anaconda --datadir=$HOME/tmp/mysql_db
+```
+
 ## TODO
 
 - [ ] PostgreSQL support.

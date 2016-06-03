@@ -1,8 +1,7 @@
 import os.path as op
 import argparse
 import logging
-from .core import FileToMySQL
-
+from .connections import FileToMySQL
 
 logger = logging.getLogger(__name__)
 

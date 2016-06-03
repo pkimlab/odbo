@@ -1,7 +1,5 @@
 sudo: false
 language: python
-python:
-  - '3.5'
 services:
   - mysql
 env:
@@ -26,7 +24,7 @@ install:
   - conda build -q devtools/conda-recipe/
 script:
   - source activate _test
-  - python setup.py test
+  - py.test
   - source deactivate
 after_success:
   - echo "Success!"

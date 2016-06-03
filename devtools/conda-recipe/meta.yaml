@@ -8,16 +8,17 @@ source:
   path: ../../
 
 build:
+  script: python setup.py install
   number: 0
   entry_points:
     - datapkg = datapkg.__main__:main
 
 requirements:
   build:
-    # Basic python
+    # Basic
     - python
   run:
-    # Basic python
+    # Basic
     - python
     - pyyaml
     - requests
@@ -26,17 +27,19 @@ requirements:
     - paramiko
     - biopython
     - retrying
-    # Scientific python
+    - psutil
+    # Scientific
     - numpy
     - scipy
     - pandas
     - scikit-learn
-    # Database
+    # Database clients
     - sqlalchemy
     - mysqlclient
     - psycopg2
-    # System tools
+    # Binaries
     - p7zip
+    - mariadb-server
 
 test:
   requires:

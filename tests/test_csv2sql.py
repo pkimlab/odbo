@@ -5,10 +5,7 @@ import subprocess
 import shlex
 import pytest
 import sqlalchemy as sa
-import datapkg.settings
 
-
-datapkg.settings.configure_logging('debug')
 logger = logging.getLogger(__name__)
 
 
@@ -49,8 +46,3 @@ def test_cli(file_db):
     print(sp.returncode)
     assert sp.returncode == 0
     return sp
-
-
-if __name__ == '__main__':
-    import pytest
-    pytest.main([__file__, '-svx'])
