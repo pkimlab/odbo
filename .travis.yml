@@ -20,12 +20,12 @@ install:
   - conda info -a
   - conda update -q conda
   - conda install -q --yes conda-build anaconda-client git-lfs
-  - git lfs checkout
+  - git lfs pull
   - pip install codecov
   - conda build -q devtools/conda-recipe/
 script:
   - source activate _test
-  - py.test
+  - py.test -vvv
   - source deactivate
 after_success:
   - echo "Success!"

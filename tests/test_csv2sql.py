@@ -18,8 +18,9 @@ file_db_list = [
     (op.join(op.abspath(op.splitext(__file__)[0]), 'CosmicNonCodingVariants.vcf.gz'),
      os.environ['DATAPKG_CONNECTION_STR'] + '/' + DB_SCHEMA),
 ]
-engine = sa.create_engine(os.environ['DATAPKG_CONNECTION_STR'] + '/' + DB_SCHEMA)
+engine = sa.create_engine(os.environ['DATAPKG_CONNECTION_STR'])
 engine.execute('CREATE SCHEMA IF NOT EXISTS {}'.format(DB_SCHEMA))
+engine = sa.create_engine(os.environ['DATAPKG_CONNECTION_STR'] + '/' + DB_SCHEMA)
 
 
 @pytest.fixture(scope='session', params=file_db_list)
