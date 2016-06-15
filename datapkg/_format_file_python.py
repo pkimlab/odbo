@@ -9,7 +9,7 @@ import gzip
 import bz2
 import re
 import logging
-from ascommon.py_tools import format_unprintable
+from datapkg import format_unprintable
 
 logger = logging.getLogger(__name__)
 

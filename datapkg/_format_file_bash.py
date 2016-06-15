@@ -1,8 +1,7 @@
 """Format (compressed) CSV file for import into an SQL database using Linux system commands."""
 import os.path as op
 import logging
-from ascommon.py_tools import format_unprintable
-from datapkg._helper import run_command
+from datapkg import run_command, format_unprintable
 
 logger = logging.getLogger(__name__)
 

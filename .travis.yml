@@ -19,7 +19,8 @@ install:
   - conda config --add channels bioconda
   - conda info -a
   - conda update -q conda
-  - conda install -q --yes conda-build anaconda-client
+  - conda install -q --yes conda-build anaconda-client git-lfs
+  - git lfs checkout
   - pip install codecov
   - conda build -q devtools/conda-recipe/
 script:

@@ -10,6 +10,17 @@ logger = logging.getLogger(__name__)
 logging.getLogger("paramiko").setLevel(logging.WARNING)
 
 
+def format_unprintable(string):
+    r"""Escape tabs (\t), newlines (\n), etc. for system commands and printing.
+
+    Examples
+    --------
+    >>> format_unprintable('\t')
+    '\\t'
+    """
+    return repr(string).strip("'")
+
+
 def parse_connection_string(connection_string):
     """Split `connection_string` into database parameters.
 
