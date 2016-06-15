@@ -5,9 +5,9 @@ import string
 from collections import Counter
 import pandas as pd
 import sqlalchemy as sa
-from ._helper import parse_connection_string, decompress, run_command, retry_database
-from ._df_helper import (
-    get_tablename, get_df_dtypes, get_file_dtypes, convert_na_values, vcf2tsv)
+from ._helper import parse_connection_string, make_connection_string, run_command, retry_database
+from ._df_helper import get_tablename, get_df_dtypes, get_file_dtypes, format_columns
+from ._format_file_bash import decompress
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,15 @@ MYSQL_CSV_OPTS = dict(
 )
 
 
-class _ToMySQL:
+class Table:
+
+    def __init__(self, name, df, dtypes):
+        self.name = name
+        self.df = df
+        self.dtypes = dtypes
+
+
+class MySQL:
     """Load and save data from a database using intermediary csv files.
 
     Much faster than pandas ``df.to_sql(...)``.
@@ -41,7 +49,16 @@ class _ToMySQL:
         self.use_compression = use_compression
         #
         self.engine = sa.create_engine(connection_string, echo=echo)
-        self.db_schema = self._get_db_schema()
+        try:
+            self.db_schema = self._get_db_schema()
+        except sa.exc.OperationalError:
+            db_params = parse_connection_string(connection_string)
+            _schema = db_params['db_name']
+            db_params['db_name'] = ''
+            _connection_string = make_connection_string(**db_params)
+            _engine = sa.create_engine(_connection_string, echo=echo)
+            _engine.execute('CREATE DATABASE {}'.format(_schema))
+            self.db_schema = self._get_db_schema()
         STG_HOST = self.storage_host
 
     def _get_db_schema(self):
@@ -61,14 +78,14 @@ class _ToMySQL:
         # Change storage engine
         if self.db_engine != self._default_db_engine:
             self.engine.execute(
-                'ALTER TABLE {tablename} ENGINE={db_engine};'
+                'ALTER TABLE {tablename} ENGINE={db_engine};'  # ROW_FORMAT = FIXED
                 .format(tablename=tablename, db_engine=self.db_engine))
         # Set compression
         if self.use_compression and self.db_engine == 'InnoDB':
             self.engine.execute(
                 'ALTER TABLE {tablename} ROW_FORMAT=COMPRESSED;'.format(tablename=tablename))
 
-    def load_file_to_database(self, tsv_filepath, tablename, skiprows=1):
+    def load_file_to_database(self, tsv_filepath, tablename, sep, skiprows=1):
         logger.debug("Loading data into MySQL table: '{}'...".format(tablename))
         # Database options
         db_params = parse_connection_string(self.connection_string)
@@ -77,15 +94,51 @@ class _ToMySQL:
                 '-p {}'.format(db_params['password']) if db_params['password'] else ''
             )
         # Run
+        if db_params['socket']:
+            header = "--socket={socket}".format(**db_params)
+        elif db_params['password']:
+            header = "-h {host_ip} -P {host_port} -p{password}".format(**db_params)
+        else:
+            header = "-h {host_ip} -P {host_port}".format(**db_params)
+
         system_command = """\
-mysql --local-infile -h {host_ip} -P {host_port} -u {username} {password} {db_name} -e \
-"load data local infile '{tsv_filepath}' into table `{tablename}` ignore {skiprows} lines; \
+mysql --local-infile {header} -u {username} {db_name} -e \
+"load data local infile '{tsv_filepath}' into table `{tablename}` \
+fields terminated by {sep} ignore {skiprows} lines; \
  show warnings;" \
-""".format(tsv_filepath=tsv_filepath, tablename=tablename, skiprows=skiprows, **db_params)
+""".format(header=header, tsv_filepath=tsv_filepath, tablename=tablename, skiprows=skiprows,
+           sep=repr(sep), **db_params)
         run_command(system_command)
 
-    def create_indices(self, tablename, index_commands):
-        for index_name, index_command in zip(string.ascii_letters, index_commands):
+    def add_idx_column(self, table_name, column_name='idx', auto_increment=1):
+        sql_command = """\
+ALTER TABLE {table_name}
+AUTO_INCREMENT = {auto_increment},
+ADD COLUMN {column_name} BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST
+""".format(table_name=table_name, column_name=column_name, auto_increment=auto_increment)
+        self.engine.execute(sql_command)
+        max_id = pd.read_sql_query(
+            "SELECT MAX({column_name}) from {table_name}".format(
+                table_name=table_name, column_name=column_name),
+            self.engine,
+        )
+        return int(max_id.values)
+
+    def get_indexes(self, tablename):
+        db_params = parse_connection_string(self.connection_string)
+        db_params['db_name']
+        sql_query = """\
+SELECT DISTINCT INDEX_NAME FROM information_schema.statistics
+WHERE table_schema = '{db_name}'
+AND table_name = '{tablename}';
+""".format(db_name=db_params['db_name'], tablename=tablename)
+        existing_indexes = set(pd.read_sql_query(sql_query, self.engine)['INDEX_NAME'])
+        return existing_indexes
+
+    def create_indexes(self, tablename, index_commands):
+        existing_indexes = self.get_indexes(tablename)
+        valid_indexes = [c for c in string.ascii_lowercase if c not in existing_indexes]
+        for index_name, index_command in zip(valid_indexes, index_commands):
             columns, unique = index_command
             sql_command = (
                 "create {unique} index {index_name} on {tablename} ({columns});"
@@ -97,47 +150,65 @@ mysql --local-infile -h {host_ip} -P {host_port} -u {username} {password} {db_na
             )
             self.engine.execute(sql_command)
 
-
-class FileToMySQL(_ToMySQL):
-
-    def import_table(self, filename, tablename=None, index_commands=None, **vargs):
-        """Load file `filename` into database table `tablename`.
+    def import_file(
+            self, file, tablename=None, dtypes=None, extra_dtypes=None,
+            extra_substitutions=None, force_new_tempfile=True, **csv_opts):
+        """Load file `file` into database table `tablename`.
 
         Parameters
         ----------
+        additional_substitutions : list of tuples
+            Additional substitutions to perform on the file before loading to database.
         vargs : dict
             Options to pass to `pd.read_csv`.
         """
+        if extra_substitutions is None:
+            extra_substitutions = []
+
         # Default parameters
-        vargs['sep'] = vargs.get('sep', '\t')
-        vargs['na_values'] = vargs.get('na_values', ['', '\\N', '.', 'na'])
-        tablename = tablename if tablename else get_tablename(filename)
-        # Create table with proper dtypes
-        filepath = op.abspath(op.join(self.shared_folder, filename))
-        with decompress(filepath) as tsv_filepath:
-            # Edit file
-            if tsv_filepath.endswith('.vcf'):
-                vcf2tsv(tsv_filepath)
-            convert_na_values(tsv_filepath, vargs['na_values'])
-            # Get column types and create a dataframe
-            df, dtypes = get_file_dtypes(tsv_filepath, **vargs)
-            logger.debug('df: {}'.format(df))
-            logger.debug('dtypes: {}'.format(dtypes))
-            self.create_db_table(tablename, df, dtypes)
-            # Upload file to database
-            db_skiprows = vargs.get('skiprows', 0) + 1
-            self.load_file_to_database(tsv_filepath, tablename, db_skiprows)
-        if index_commands:
-            self.create_indices(tablename, index_commands)
-        if self.use_compression and self.db_engine == 'MyISAM':
-            self.compress_myisam_table(tablename)
+        csv_opts['sep'] = csv_opts.get('sep', '\t')
+        csv_opts['na_values'] = csv_opts.get('na_values', ['', '\\N', '.', 'na'])
+        if isinstance(csv_opts['na_values'], str):
+            csv_opts['na_values'] = [csv_opts['na_values']]
 
+        tablename = tablename if tablename else get_tablename(file)
+        basefile, ext = op.splitext(file)
+        outfile = basefile + '.tmp'
 
-class DataFrameToMySQL(_ToMySQL):
+        decompress(
+            infile=file, outfile=outfile, sep=csv_opts['sep'], na_values=csv_opts['na_values'],
+            extra_substitutions=extra_substitutions)
 
-    def import_table(
-            self, df, tablename, index_commands=None, use_temp_file=True, if_exists='replace',
-            force=True):
+        # Get column types and create a dataframe
+        if dtypes is None:
+            df, dtypes = get_file_dtypes(outfile, **csv_opts)
+            df.columns = format_columns(df.columns)
+            dtypes = {format_columns(k): v for k, v in dtypes.items()}
+            if extra_dtypes:
+                if set(extra_dtypes.keys()) - set(dtypes.keys()):
+                    logger.warning(
+                        "The following dtypes were not applied: ({})"
+                        .format(set(extra_dtypes.keys()) - set(dtypes.keys())))
+                dtypes = {**dtypes, **extra_dtypes}
+        else:
+            df, _ = get_file_dtypes(outfile, nrows=0, **csv_opts)
+            df.columns = format_columns(df.columns)
+
+        self.create_db_table(tablename, df, dtypes)
+
+        # Upload file to database
+        db_skiprows = csv_opts.get('skiprows', 0) + 1
+        self.load_file_to_database(outfile, tablename, csv_opts['sep'], db_skiprows)
+
+        try:
+            os.remove(outfile)
+        except FileNotFoundError:
+            pass
+        return Table(name=tablename, df=df, dtypes=dtypes)
+
+    def import_df(
+            self, df, tablename=None, dtypes=None, extra_dtypes=None, use_temp_file=True,
+            if_exists='replace', force=True):
         """Load dataframe `df` into database table `tablename`.
 
         Parameters
@@ -146,9 +217,6 @@ class DataFrameToMySQL(_ToMySQL):
             Need this to guess the columns types.
         tablename : str
             Name of the table to create in the database.
-        index_commands : list of tuples
-            List of tuples describing the indexes that should be created. E.g.
-            `[(['a', 'b'], True), (['b', 'a'], False)]`
         use_temp_file : bool
             Whether to save data to a .tsv file first, or import directly.
         if_exists : str
@@ -161,16 +229,15 @@ class DataFrameToMySQL(_ToMySQL):
             raise Exception("The following columns have duplicates: {}".format(duplicate_columns))
         # Sniff out column dtypes and create a db table
         dtypes = get_df_dtypes(df)
+        if extra_dtypes:
+            dtypes = {**dtypes, **extra_dtypes}
         self.create_db_table(tablename, df, dtypes, empty=use_temp_file, if_exists=if_exists)
         # If `use_temp_file`, save a .tsv file and load it into the database
         if use_temp_file:
-            bz2_filename = op.join(self.shared_folder, tablename + '.tsv.bz2')
-            if op.isfile(bz2_filename) and not force:
-                logger.info("bzip2 file already exists: {}".format(bz2_filename))
+            tsv_file = op.abspath(op.join(self.shared_folder, tablename + '.tsv'))
+            if op.isfile(tsv_file) and not force:
+                logger.info("tempfile already exists: {}".format(tsv_file))
             else:
-                df.to_csv(bz2_filename, compression='bz2', **MYSQL_CSV_OPTS)
-            with decompress(bz2_filename, stg_host=self.storage_host, force=force) \
-                    as tsv_filename:
-                self.load_file_to_database(tsv_filename, tablename, 1)
-        if index_commands:
-            self.create_indices(tablename, index_commands)
+                df.to_csv(tsv_file, **MYSQL_CSV_OPTS)
+            self.load_file_to_database(tsv_file, tablename, '\t', 1)
+        return Table(name=tablename, df=df[0:0], dtypes=dtypes)

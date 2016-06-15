@@ -1,8 +1,5 @@
-import os.path as op
 import re
 import logging
-import time
-import contextlib
 import subprocess
 import shlex
 from retrying import retry
@@ -12,84 +9,53 @@ import sqlalchemy as sa
 logger = logging.getLogger(__name__)
 logging.getLogger("paramiko").setLevel(logging.WARNING)
 
-#: IP address of the NFS server
-#: (so that you don't have to uncompress files over the network)
-STG_HOST = None
-
 
 def parse_connection_string(connection_string):
     """Split `connection_string` into database parameters.
 
     Examples
     --------
-    >>> parse_connection_string('mysql://root:@localhost') == {\
-        'db_name': '',\
-        'db_type': 'mysql',\
-        'host_ip': 'localhost',\
-        'host_port': '',\
-        'password': '',\
-        'username': 'root'\
-    }
-    True
-    >>> parse_connection_string('mysql://root:root_pass@192.168.0.1:3306/test') == {\
-        'db_name': 'test',\
-        'db_type': 'mysql',\
-        'host_ip': '192.168.0.1',\
-        'host_port': '3306',\
-        'password': 'root_pass',\
-        'username': 'root'\
-    }
-    True
+    >>> from pprint import pprint
+    >>> pprint(parse_connection_string('mysql://root:@localhost'))
+    {'db_name': '',
+     'db_type': 'mysql',
+     'host_ip': 'localhost',
+     'host_port': '',
+     'password': '',
+     'socket': '',
+     'username': 'root'}
+    >>> pprint(parse_connection_string('mysql://root:root_pass@192.168.0.1:3306/test'))
+    {'db_name': 'test',
+     'db_type': 'mysql',
+     'host_ip': '192.168.0.1',
+     'host_port': '3306',
+     'password': 'root_pass',
+     'socket': '',
+     'username': 'root'}
     """
     db_params = {}
     (db_params['db_type'], db_params['username'], db_params['password'],
-     db_params['host_ip'], db_params['host_port'], db_params['db_name']) = (
+     db_params['host_ip'], db_params['host_port'], db_params['db_name'],
+     db_params['socket']) = (
         re.match(
-            '^(\w*)://(\w*):(\w*)@(localhost|[0-9\.]*)(|:[0-9]*)(|\/\w*)$',
+            '^(\w*)://(\w*):(\w*)@(localhost|[0-9\.]*)(|:[0-9]*)(|\/\w*)(|\?unix_socket=.*)$',
             connection_string)
         .groups()
     )
     db_params['host_port'] = db_params['host_port'].strip(':')
     db_params['db_name'] = db_params['db_name'].strip('/')
+    db_params['socket'] = db_params['socket'].partition('?unix_socket=')[-1]
     return db_params
 
 
-@contextlib.contextmanager
-def decompress(filepath, keep_decompressed=False, stg_host=None, force=True):
-    filepath_tsv, ext = op.splitext(filepath)
-    if op.isfile(filepath_tsv) and not force:
-        logger.info("Uncompressed file already exits: {}".format(filepath_tsv))
-        yield filepath_tsv
-        return
-    # File not compressed, do nothing
-    if ext not in ['.gz', '.bz2']:
-        logger.debug("File '{}' is not compressed...".format(filepath_tsv))
-        yield filepath
-        return
-    # File compressed
-    try:
-        logger.debug("Uncompressing file...".format(filepath))
-        system_command = "7za x -bd -o'{}' '{}'".format(op.dirname(filepath), filepath)
-        run_command(system_command, host=stg_host)
-        n_tries = 0
-        while n_tries < 10:
-            if op.isfile(filepath_tsv):
-                break
-            else:
-                print("Waiting for the decompressed file to 'appear'...")
-                time.sleep(n_tries * 10)
-                n_tries += 1
-        assert op.isfile(filepath_tsv)
-        yield filepath_tsv
-    except Exception as e:
-        logger.error('{}: {}'.format(type(e), e))
-        raise e
-    finally:
-        if not keep_decompressed:
-            logger.debug("Removing decompressed file '{}'...".format(filepath_tsv))
-            system_command = "rm -f '{}'".format(filepath_tsv)
-            run_command(system_command)
-            assert not op.isfile(filepath_tsv)
+def make_connection_string(**vargs):
+    if vargs['socket']:
+        vargs['socket'] = '?unix_socket=' + vargs['socket']
+    connection_string = (
+        '{db_type}://{username}:{password}@{host_ip}:{host_port}/{db_name}{socket}'
+        .format(**vargs)
+    )
+    return connection_string
 
 
 # === Retrying ===
@@ -124,10 +90,11 @@ def rety_subprocess(fn):
 
 class MySubprocessError(subprocess.SubprocessError):
 
-    def __init__(self, command, host, output, returncode):
+    def __init__(self, command, host, stdout, stderr, returncode):
         self.command = command
         self.host = host
-        self.output = output
+        self.stdout = stdout
+        self.stderr = stderr
         self.returncode = returncode
 
 
@@ -157,36 +124,45 @@ class MySSHClient:
 
 
 @rety_subprocess
-def run_command(system_command, host=None):
+def run_command(system_command, host=None, *, shell=False, allowed_returncodes=[0]):
     """Run system command either locally or over ssh."""
+    # === Run command ===
     logger.debug(system_command)
     if host is not None:
         logger.debug("Running on host: '{}'".format(host))
         with MySSHClient(host) as ssh:
-            stdin, stdout, stderr = ssh.exec_command(system_command)
-            output = stdout.read().decode() + stderr.read().decode()
-            returncode = stdout.channel.recv_exit_status()
+            _stdin, _stdout, _stderr = ssh.exec_command(system_command)
+            stdout = _stdout.read().decode()
+            stderr = _stderr.read().decode()
+            returncode = _stdout.channel.recv_exit_status()
     else:
         logger.debug("Running locally")
         sp = subprocess.run(
-            shlex.split(system_command), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            universal_newlines=True,
+            system_command if shell else shlex.split(system_command),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=shell, universal_newlines=True,
         )
-        output = sp.stdout + sp.stderr
+        stdout = sp.stdout
+        stderr = sp.stderr
         returncode = sp.returncode
-    # Process results
-    if returncode != 0:
+    # === Process results ===
+    stdout_lower = stdout.lower()
+    if returncode not in allowed_returncodes:
         error_message = (
-            "Encountered an error: '{}'\n".format(output) +
+            "Encountered an error: '{}'\n".format(stderr) +
             "System command: '{}'\n".format(system_command) +
+            "Output: '{}'\n".format(stdout) +
             "Return code: {}".format(returncode)
         )
         logger.error(error_message)
         raise MySubprocessError(
             command=system_command,
             host=host,
-            output=output,
+            stdout=stdout,
+            stderr=stderr,
             returncode=returncode,
         )
-    logger.debug("Command ran successfully!")
-    logger.debug("output: {}".format(output))
+    elif 'warning' in stdout_lower or 'error' in stdout_lower:
+        logger.warning("Command ran with warnings / errors:\n{}".format(stdout.strip()))
+    else:
+        logger.debug("Command ran successfully:\n{}".format(stdout.strip()))
+    return stdout, stderr, returncode
