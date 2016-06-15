@@ -1,13 +1,16 @@
 import os.path as op
 import argparse
 import logging
-from .connections import FileToMySQL
+from .connections import MySQL
 
 logger = logging.getLogger(__name__)
 
 
 def _file2db(args):
-    db = FileToMySQL(
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
+        logging.getLogger().setLevel(logging.DEBUG)
+    db = MySQL(
         # os.environ['DATAPKG_CONNECTION_STR'] + '/protein_folding_energy'
         connection_string=args.connection_string,
         # NOTEBOOK_NAME
@@ -16,20 +19,10 @@ def _file2db(args):
         storage_host=args.storage_host,
         echo=args.debug,
     )
-    tablename = ''.join(
-        c for c in (
-            op.splitext(op.basename(args.file))[0]
-            .lower()
-            .replace('-', '_')
-            .replace('.', '_')
-        ) if c.isalnum() or c == '_')
-    logger.info(tablename)
-    db.import_table(
-        filename=op.abspath(args.file),
-        tablename=tablename,
-        index_commands=None,
+    db.import_file(
+        file=op.abspath(args.file),
         # **vargs
-        sep=args.sep, nrows=args.nrows, skiprows=args.skiprows, na_values=args.na_values,
+        sep=args.sep, skiprows=args.skiprows, na_values=args.na_values,
     )
 
 
@@ -60,8 +53,6 @@ on a database.""")
     parser.add_argument('--debug', action='store_true', default=False)
     #
     parser.add_argument('--sep', type=str, default='\t')
-    parser.add_argument('--nrows', type=int,
-                        help='Number of rows to read when figuring out dtypes.')
     parser.add_argument('--skiprows', type=int, default=0,
                         help='Number of rows other than the header row.')
     parser.add_argument('--na_values', type=str, default=['', '.'])

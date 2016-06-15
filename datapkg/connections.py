@@ -175,6 +175,8 @@ AND table_name = '{tablename}';
         basefile, ext = op.splitext(file)
         outfile = basefile + '.tmp'
 
+        if '.vcf' in op.basename(file).lower():
+            extra_substitutions.append('/^##/d')
         decompress(
             infile=file, outfile=outfile, sep=csv_opts['sep'], na_values=csv_opts['na_values'],
             extra_substitutions=extra_substitutions)
