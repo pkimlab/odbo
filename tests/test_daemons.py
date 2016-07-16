@@ -6,6 +6,7 @@ import tempfile
 import shutil
 import pytest
 import datapkg
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,12 @@ def test_start_mysql():
     mysqld = datapkg.MySQLDaemon(datadir=datadir)
     mysqld.install_db()
     mysqld.start()
-    assert mysqld._mysqld_process is not None
+    time_0 = time.time()
+    while mysqld._mysqld_process is None:
+        time.sleep(5)
+        time_1 = time.time()
+        if (time_1 - time_0) > 2 * 60:
+            assert False, "TimeOut"
     pid = mysqld._mysqld_process.pid
     logger.debug("Process id: {}, status: {}".format(pid, psutil.Process(pid).status()))
     # Stop
