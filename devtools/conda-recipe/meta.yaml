@@ -53,6 +53,6 @@ test:
     - datapkg file2db --help
 
 about:
-  home: http://ostrokach.github.io/datapkg
+  home: http://kimlaborg.github.io/datapkg
   license: MIT
   summary: Helpful bioinformatics scripts.
