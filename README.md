@@ -1,9 +1,9 @@
 # DataPkg
 
-[![anaconda](https://anaconda.org/pmklab/datapkg/badges/version.svg)](https://anaconda.org/pmklab/datapkg)
-[![docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square&?version=latest)](http://pmklab.github.io/datapkg)
-[![travis](https://img.shields.io/travis/pmklab/datapkg.svg?style=flat-square)](https://travis-ci.org/pmklab/datapkg)
-[![codecov](https://img.shields.io/codecov/c/github/pmklab/datapkg.svg?style=flat-square)](https://codecov.io/gh/pmklab/datapkg)
+[![anaconda](https://anaconda.org/kimlab/datapkg/badges/version.svg)](https://anaconda.org/kimlaborg/datapkg)
+[![docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square&?version=latest)](http://kimlaborg.github.io/datapkg)
+[![travis](https://img.shields.io/travis/kimlaborg/datapkg.svg?style=flat-square)](https://travis-ci.org/kimlaborg/datapkg)
+[![codecov](https://img.shields.io/codecov/c/github/kimlaborg/datapkg.svg?style=flat-square)](https://codecov.io/gh/kimlaborg/datapkg)
 
 DataPkg is a tool to simplify the distribution of pandas DataFrames as CSV and database files.
 

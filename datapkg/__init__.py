@@ -1,3 +1,4 @@
+# flake8: noqa
 from ._helper import *
 from ._df_helper import *
 from .daemons import MySQLDaemon
@@ -7,4 +8,3 @@ __all__ = [
     '_format_file_python',
     '_format_file_bash',
 ]
-from . import *
