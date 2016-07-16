@@ -21,6 +21,7 @@ def test_csv_line_formatter():
 
 @pytest.mark.parametrize("_format_file", [datapkg._format_file_bash, datapkg._format_file_python])
 def test__format_file(_format_file):
+    """Make sure that `_format_file` correctly converts null values to '\\N'."""
     infile = op.join(op.splitext(__file__)[0], 'CosmicSample.tsv.gz')
 
     tf, outfile = tempfile.mkstemp()

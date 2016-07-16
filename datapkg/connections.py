@@ -3,6 +3,7 @@ import os.path as op
 import logging
 import string
 from collections import Counter
+import csv
 import pandas as pd
 import sqlalchemy as sa
 from ._helper import parse_connection_string, make_connection_string, run_command, retry_database
@@ -23,10 +24,11 @@ MYSQL_CSV_OPTS = dict(
 
 class Table:
 
-    def __init__(self, name, df, dtypes):
+    def __init__(self, name, df, dtypes, tempfile):
         self.name = name
         self.df = df
         self.dtypes = dtypes
+        self.tempfile = tempfile
 
 
 class MySQL:
@@ -85,14 +87,18 @@ class MySQL:
             self.engine.execute(
                 'ALTER TABLE {tablename} ROW_FORMAT=COMPRESSED;'.format(tablename=tablename))
 
-    def load_file_to_database(self, tsv_filepath, tablename, sep, skiprows=1):
+    def load_file_to_database(
+            self, tsv_filepath, tablename, sep, quotechar='"', quoting=csv.QUOTE_MINIMAL,
+            skiprows=1):
         logger.debug("Loading data into MySQL table: '{}'...".format(tablename))
+
         # Database options
         db_params = parse_connection_string(self.connection_string)
         if 'password' in db_params:
             db_params['password'] = (
                 '-p {}'.format(db_params['password']) if db_params['password'] else ''
             )
+
         # Run
         if db_params['socket']:
             header = "--socket={socket}".format(**db_params)
@@ -101,13 +107,23 @@ class MySQL:
         else:
             header = "-h {host_ip} -P {host_port}".format(**db_params)
 
+        if quotechar == '"':
+            quotechar = '\\"'
+        if (quoting is None or
+                (quoting == csv.QUOTE_MINIMAL or quoting == 0) or
+                (quoting == csv.QUOTE_NONNUMERIC or quoting == 2)):
+            quoting = """optionally enclosed by '{}'""".format(quotechar)
+        elif (quoting == csv.QUOTE_ALL or quoting == 3):
+            quoting = """enclosed by '{}'""".format(quotechar)
+        else:
+            quoting = ""
         system_command = """\
 mysql --local-infile {header} -u {username} {db_name} -e \
 "load data local infile '{tsv_filepath}' into table `{tablename}` \
-fields terminated by {sep} ignore {skiprows} lines; \
+fields terminated by {sep} {quoting} ignore {skiprows} lines; \
  show warnings;" \
 """.format(header=header, tsv_filepath=tsv_filepath, tablename=tablename, skiprows=skiprows,
-           sep=repr(sep), **db_params)
+           sep=repr(sep), quoting=quoting, **db_params)
         run_command(system_command)
 
     def add_idx_column(self, table_name, column_name='idx', auto_increment=1):
@@ -137,9 +153,11 @@ AND table_name = '{tablename}';
 
     def create_indexes(self, tablename, index_commands):
         existing_indexes = self.get_indexes(tablename)
-        valid_indexes = [c for c in string.ascii_lowercase if c not in existing_indexes]
+        valid_indexes = [c for c in string.ascii_uppercase if c not in existing_indexes]
         for index_name, index_command in zip(valid_indexes, index_commands):
             columns, unique = index_command
+            if not isinstance(columns, (list, tuple)):
+                columns = [columns]
             sql_command = (
                 "create {unique} index {index_name} on {tablename} ({columns});"
                 .format(
@@ -152,7 +170,7 @@ AND table_name = '{tablename}';
 
     def import_file(
             self, file, tablename=None, dtypes=None, extra_dtypes=None,
-            extra_substitutions=None, force_new_tempfile=True, **csv_opts):
+            extra_substitutions=None, use_tmp=False, keep_tmp=False, **csv_opts):
         """Load file `file` into database table `tablename`.
 
         Parameters
@@ -170,16 +188,16 @@ AND table_name = '{tablename}';
         csv_opts['na_values'] = csv_opts.get('na_values', ['', '\\N', '.', 'na'])
         if isinstance(csv_opts['na_values'], str):
             csv_opts['na_values'] = [csv_opts['na_values']]
+        csv_opts['quotechar'] = csv_opts.get('quotechar', '"')
+        csv_opts['quoting'] = csv_opts.get('quoting', csv.QUOTE_MINIMAL)
 
         tablename = tablename if tablename else get_tablename(file)
-        basefile, ext = op.splitext(file)
-        outfile = basefile + '.tmp'
 
         if '.vcf' in op.basename(file).lower():
             extra_substitutions.append('/^##/d')
-        decompress(
-            infile=file, outfile=outfile, sep=csv_opts['sep'], na_values=csv_opts['na_values'],
-            extra_substitutions=extra_substitutions)
+        outfile = decompress(
+            infile=file, sep=csv_opts['sep'], na_values=csv_opts['na_values'],
+            extra_substitutions=extra_substitutions, use_tmp=use_tmp)
 
         # Get column types and create a dataframe
         if dtypes is None:
@@ -200,13 +218,16 @@ AND table_name = '{tablename}';
 
         # Upload file to database
         db_skiprows = csv_opts.get('skiprows', 0) + 1
-        self.load_file_to_database(outfile, tablename, csv_opts['sep'], db_skiprows)
+        self.load_file_to_database(
+            outfile, tablename, csv_opts['sep'], csv_opts['quotechar'], csv_opts['quoting'],
+            db_skiprows)
 
-        try:
-            os.remove(outfile)
-        except FileNotFoundError:
-            pass
-        return Table(name=tablename, df=df, dtypes=dtypes)
+        if not keep_tmp:
+            try:
+                os.remove(outfile)
+            except FileNotFoundError:
+                pass
+        return Table(name=tablename, df=df, dtypes=dtypes, tempfile=outfile)
 
     def import_df(
             self, df, tablename=None, dtypes=None, extra_dtypes=None, use_temp_file=True,
@@ -241,5 +262,7 @@ AND table_name = '{tablename}';
                 logger.info("tempfile already exists: {}".format(tsv_file))
             else:
                 df.to_csv(tsv_file, **MYSQL_CSV_OPTS)
-            self.load_file_to_database(tsv_file, tablename, '\t', 1)
-        return Table(name=tablename, df=df[0:0], dtypes=dtypes)
+            self.load_file_to_database(tsv_file, tablename, '\t', skiprows=1)
+        else:
+            tsv_file = None
+        return Table(name=tablename, df=df[0:0], dtypes=dtypes, tempfile=tsv_file)

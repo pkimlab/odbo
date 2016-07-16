@@ -106,6 +106,7 @@ mysql_install_db --no-defaults --basedir={basedir} --datadir={datadir} \
         system_command = """\
 mysqld --no-defaults --basedir={basedir} --datadir={datadir} \
     --socket='{socket}' --port={port} \
+    --default-storage-engine=MyISAM \
     --external-locking \
 """.format(basedir=self.basedir, datadir=self.datadir, socket=self.socket, port=self.port)
         # --delay-key-write=OFF --query-cache-size=0

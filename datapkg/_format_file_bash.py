@@ -1,4 +1,5 @@
 """Format (compressed) CSV file for import into an SQL database using Linux system commands."""
+import os
 import os.path as op
 import logging
 from datapkg import run_command, format_unprintable
@@ -6,8 +7,15 @@ from datapkg import run_command, format_unprintable
 logger = logging.getLogger(__name__)
 
 
-def decompress(infile, outfile, sep='\t', na_values=None, extra_substitutions=None):
-    """."""
+def decompress(
+        infile, sep='\t', na_values=None, extra_substitutions=None, use_tmp=False, outfile=None):
+    """Decompress `infile` to produce a file with name `${infile}.tmp`.
+
+    Parameters
+    ----------
+    outfile : str | None
+        The name of the (decompressed) output file. If None, use `${infile}.tmp`.
+    """
     ext = op.splitext(infile)[-1]
     if ext == '.gz':
         executable = 'gzip -dc'
@@ -15,6 +23,23 @@ def decompress(infile, outfile, sep='\t', na_values=None, extra_substitutions=No
         executable = 'bz2 -dc'
     else:
         executable = 'cat'
+
+    if (executable.strip() == 'cat' and
+            (not na_values or na_values == ['\\N']) and
+            (not extra_substitutions)):
+        logger.debug("No need to process input file '{}'".format(infile))
+        return infile
+
+    if outfile is None:
+        outfile = infile + '.tmp'
+    if op.isfile(outfile):
+        logger.debug("Decompressed file '{}' already exists!")
+        if use_tmp:
+            logger.debug("Using...")
+            return outfile
+        else:
+            logger.debug("Removing...")
+            os.remove(outfile)
 
     sed_command = get_sed_command(sep, na_values, extra_substitutions)
 
@@ -29,12 +54,13 @@ def decompress(infile, outfile, sep='\t', na_values=None, extra_substitutions=No
     logger.debug(system_command)
     run_command(system_command, shell=True)  # NB: sed is CPU-bound, no need to do remotely
     assert op.isfile(outfile)
+    return outfile
 
 
 def get_sed_command(sep='\t', na_values=None, extra_substitutions=None):
     """."""
-    na_values = na_values[:] if na_values is not None else []
-    extra_substitutions = extra_substitutions[:] if extra_substitutions is not None else []
+    na_values = list(na_values) if na_values is not None else []
+    extra_substitutions = list(extra_substitutions) if extra_substitutions is not None else []
 
     if '\\N' in na_values:
         na_values.remove('\\N')
@@ -65,12 +91,14 @@ def main(infile, outfile, sep='\t', na_values=(), extra_substitutions=()):
     if not na_values:
         na_values = ['', '\\N', '.', 'na']
 
-    decompress(
+    outfile = decompress(
         infile=infile,
-        outfile=outfile,
         sep=sep,
         na_values=na_values,
-        extra_substitutions=extra_substitutions)
+        extra_substitutions=extra_substitutions,
+        outfile=outfile)
+    assert op.isfile(outfile)
+    return 0
 
 
 if __name__ == '__main__':
@@ -79,8 +107,7 @@ if __name__ == '__main__':
     logging.getLogger().setLevel(logging.DEBUG)
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', '--infile', type=str)
-    parser.add_argument('-o', '--outfile', type=str)
     args = parser.parse_args()
     if args.outfile is None:
         args.outfile = op.splitext(args.infile)[0] + '.tmp'
-    main(args.infile, args.outfile)
+    main(args.infile)

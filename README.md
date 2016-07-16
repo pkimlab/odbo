@@ -1,9 +1,9 @@
 # DataPkg
 
-[![anaconda](https://anaconda.org/ostrokach/datapkg/badges/version.svg)](https://anaconda.org/ostrokach/datapkg)
-[![docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square&?version=latest)](http://ostrokach.github.io/datapkg)
-[![travis](https://img.shields.io/travis/ostrokach/datapkg.svg?style=flat-square)](https://travis-ci.org/ostrokach/datapkg)
-[![codecov](https://img.shields.io/codecov/c/github/ostrokach/datapkg.svg?style=flat-square)](https://codecov.io/gh/ostrokach/datapkg)
+[![anaconda](https://anaconda.org/pmklab/datapkg/badges/version.svg)](https://anaconda.org/pmklab/datapkg)
+[![docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square&?version=latest)](http://pmklab.github.io/datapkg)
+[![travis](https://img.shields.io/travis/pmklab/datapkg.svg?style=flat-square)](https://travis-ci.org/pmklab/datapkg)
+[![codecov](https://img.shields.io/codecov/c/github/pmklab/datapkg.svg?style=flat-square)](https://codecov.io/gh/pmklab/datapkg)
 
 DataPkg is a tool to simplify the distribution of pandas DataFrames as CSV and database files.
 
@@ -21,3 +21,11 @@ mysqld --no-defaults --basedir=$HOME/anaconda --datadir=$HOME/tmp/mysql_db
 
 - [ ] PostgreSQL support.
 - [ ] HDF5 support.
+- [ ] MariaDB CollumnStore support.
+
+
+## Contributing
+
+- Follow [GitHub Flow](https://guides.github.com/introduction/flow/).
+- Make sure all tests pass before merging into master (including PEP8).
+- Add tests for your code.

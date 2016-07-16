@@ -4,6 +4,7 @@
 - PyPy runs ~0.97 times faster, so not worth it.
 """
 from __future__ import print_function
+import os
 import os.path as op
 import gzip
 import bz2
@@ -14,8 +15,15 @@ from datapkg import format_unprintable
 logger = logging.getLogger(__name__)
 
 
-def decompress(infile, outfile, sep='\t', na_values=None, extra_substitutions=None):
-    """."""
+def decompress(
+        infile, sep='\t', na_values=None, extra_substitutions=None, use_tmp=False, outfile=None):
+    """Decompress `infile` to produce a file with name `${infile}.tmp`.
+
+    Parameters
+    ----------
+    outfile : str | None
+        The name of the (decompressed) output file. If None, use `${infile}.tmp`.
+    """
     ext = op.splitext(infile)[-1]
     SUPPORTED_EXTENSIONS = ['.gz', '.bz2']
 
@@ -23,12 +31,23 @@ def decompress(infile, outfile, sep='\t', na_values=None, extra_substitutions=No
     if ((ext not in SUPPORTED_EXTENSIONS) and
             (not na_values or na_values == ['\\N']) and
             (not extra_substitutions)):
-        logger.debug("File '{}' is not compressed...".format(infile))
-        return
+        logger.debug("No need to process input file '{}'".format(infile))
+        return infile
+
+    if outfile is None:
+        outfile = infile + '.tmp'
+    if op.isfile(outfile):
+        logger.debug("Decompressed file '{}' already exists!")
+        if use_tmp:
+            logger.debug("Using...")
+            return outfile
+        else:
+            logger.debug("Removing...")
+            os.remove(outfile)
 
     # Uncompress file, applying function `fn`
+    logger.debug("Uncompressing file '{}' into '{}'...".format(infile, outfile))
     fn = get_csv_line_formatter(sep, na_values, extra_substitutions)
-    logger.debug("Uncompressing file...".format(infile))
     try:
         if ext == '.gz':
             ifh = gzip.open(infile, 'rb')
@@ -47,6 +66,8 @@ def decompress(infile, outfile, sep='\t', na_values=None, extra_substitutions=No
                 ofh.write(fn(data))
     finally:
         ifh.close()
+    assert op.isfile(outfile)
+    return outfile
 
 
 def get_csv_line_formatter(sep, na_values=None, extra_substitutions=None):
@@ -59,8 +80,8 @@ def get_csv_line_formatter(sep, na_values=None, extra_substitutions=None):
     \N,\N,\N,\N,N,\N
     \N,N,\N,\N,\N,\N
     """
-    na_values = na_values[:] if na_values is not None else []
-    extra_substitutions = extra_substitutions[:] if extra_substitutions is not None else []
+    na_values = list(na_values) if na_values is not None else []
+    extra_substitutions = list(extra_substitutions) if extra_substitutions is not None else []
 
     if '\\N' in na_values:
         na_values.remove('\\N')
@@ -144,13 +165,14 @@ def main(infile, outfile, sep='\t', na_values=[], extra_substitutions=[]):
     if not na_values:
         na_values = ['', '\\N', '.', 'na']
 
-    decompress(
+    outfile = decompress(
         infile=infile,
-        outfile=outfile,
         sep=sep,
         na_values=na_values,
-        extra_substitutions=extra_substitutions)
-
+        extra_substitutions=extra_substitutions,
+        outfile=outfile)
+    assert op.isfile(outfile)
+    return 0
 
 if __name__ == '__main__':
     import argparse
