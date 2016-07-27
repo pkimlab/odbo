@@ -11,7 +11,6 @@ def _file2db(args):
         logging.basicConfig(level=logging.DEBUG)
         logging.getLogger().setLevel(logging.DEBUG)
     db = MySQL(
-        # os.environ['DATAPKG_CONNECTION_STR'] + '/protein_folding_energy'
         connection_string=args.connection_string,
         # NOTEBOOK_NAME
         shared_folder=op.dirname(args.file),

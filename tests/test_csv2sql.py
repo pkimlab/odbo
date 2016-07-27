@@ -14,24 +14,18 @@ DB_SCHEMA = 'testing'
 
 file_db_list = [
     (op.join(op.abspath(op.splitext(__file__)[0]), 'CosmicCellLineProject.tsv.gz'),
-     os.environ['DATAPKG_CONNECTION_STR'] + '/' + DB_SCHEMA),
+     os.environ['DATAPKG_CONNECTION_STRING'] + '/' + DB_SCHEMA),
     (op.join(op.abspath(op.splitext(__file__)[0]), 'CosmicNonCodingVariants.vcf.gz'),
-     os.environ['DATAPKG_CONNECTION_STR'] + '/' + DB_SCHEMA),
+     os.environ['DATAPKG_CONNECTION_STRING'] + '/' + DB_SCHEMA),
 ]
-engine = sa.create_engine(os.environ['DATAPKG_CONNECTION_STR'])
+engine = sa.create_engine(os.environ['DATAPKG_CONNECTION_STRING'])
 engine.execute('CREATE SCHEMA IF NOT EXISTS {}'.format(DB_SCHEMA))
-engine = sa.create_engine(os.environ['DATAPKG_CONNECTION_STR'] + '/' + DB_SCHEMA)
+engine = sa.create_engine(os.environ['DATAPKG_CONNECTION_STRING'] + '/' + DB_SCHEMA)
 
 
 @pytest.fixture(scope='session', params=file_db_list)
 def file_db(request):
     return request.param
-
-
-# def test_module(file_db):
-#     """Test calling csv2sql module."""
-#     path, connection_string = file_db
-#     csv2sql.main(path, connection_string)
 
 
 def test_cli(file_db):

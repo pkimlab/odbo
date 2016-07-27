@@ -6,8 +6,10 @@ from collections import Counter
 import csv
 import pandas as pd
 import sqlalchemy as sa
-from ._helper import parse_connection_string, make_connection_string, run_command, retry_database
-from ._df_helper import get_tablename, get_df_dtypes, get_file_dtypes, format_columns
+from kmtools.db_tools import parse_connection_string, make_connection_string
+from .utils import (
+    run_command, retry_database, get_tablename, get_df_dtypes, get_file_dtypes, format_columns
+)
 from ._format_file_bash import decompress
 
 logger = logging.getLogger(__name__)
@@ -55,8 +57,8 @@ class MySQL:
             self.db_schema = self._get_db_schema()
         except sa.exc.OperationalError:
             db_params = parse_connection_string(connection_string)
-            _schema = db_params['db_name']
-            db_params['db_name'] = ''
+            _schema = db_params['db_schema']
+            db_params['db_schema'] = ''
             _connection_string = make_connection_string(**db_params)
             _engine = sa.create_engine(_connection_string, echo=echo)
             _engine.execute('CREATE DATABASE {}'.format(_schema))
@@ -94,18 +96,14 @@ class MySQL:
 
         # Database options
         db_params = parse_connection_string(self.connection_string)
-        if 'password' in db_params:
-            db_params['password'] = (
-                '-p {}'.format(db_params['password']) if db_params['password'] else ''
-            )
 
         # Run
-        if db_params['socket']:
-            header = "--socket={socket}".format(**db_params)
-        elif db_params['password']:
-            header = "-h {host_ip} -P {host_port} -p{password}".format(**db_params)
+        if db_params['db_socket']:
+            header = "--socket={db_socket}".format(**db_params)
+        elif db_params['db_password']:
+            header = "-h {db_url} -P {db_port} -p{db_password}".format(**db_params)
         else:
-            header = "-h {host_ip} -P {host_port}".format(**db_params)
+            header = "-h {db_url} -P {db_port}".format(**db_params)
 
         if quotechar == '"':
             quotechar = '\\"'
@@ -118,7 +116,7 @@ class MySQL:
         else:
             quoting = ""
         system_command = """\
-mysql --local-infile {header} -u {username} {db_name} -e \
+mysql --local-infile {header} -u {db_username} {db_schema} -e \
 "load data local infile '{tsv_filepath}' into table `{tablename}` \
 fields terminated by {sep} {quoting} ignore {skiprows} lines; \
  show warnings;" \
@@ -142,12 +140,11 @@ ADD COLUMN {column_name} BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST
 
     def get_indexes(self, tablename):
         db_params = parse_connection_string(self.connection_string)
-        db_params['db_name']
         sql_query = """\
 SELECT DISTINCT INDEX_NAME FROM information_schema.statistics
-WHERE table_schema = '{db_name}'
+WHERE table_schema = '{db_schema}'
 AND table_name = '{tablename}';
-""".format(db_name=db_params['db_name'], tablename=tablename)
+""".format(db_schema=db_params['db_schema'], tablename=tablename)
         existing_indexes = set(pd.read_sql_query(sql_query, self.engine)['INDEX_NAME'])
         return existing_indexes
 

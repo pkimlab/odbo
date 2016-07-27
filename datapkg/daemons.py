@@ -12,6 +12,7 @@ import subprocess
 import shlex
 import logging
 import atexit
+import socket
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ def _iter_stdout(p):
 
 class MySQLDaemon:
 
-    def __init__(self, *, basedir=None, datadir=None, socket=None, port=3306):
+    def __init__(self, *, basedir=None, datadir=None, db_socket=None, port=3306):
         if basedir is None:
             basedir = op.dirname(op.dirname(sys.executable))
             logger.debug("'basedir': {}".format(basedir))
@@ -52,10 +53,10 @@ class MySQLDaemon:
             datadir = op.join(tempfile.gettempdir(), 'mysql_db')
             logger.debug("'datadir': {}".format(datadir))
         self.datadir = datadir
-        if socket is None:
-            socket = op.join(tempfile.gettempdir(), 'mysql.sock')
-            logger.debug("'socket': {}".format(socket))
-        self.socket = socket
+        if db_socket is None:
+            db_socket = op.join(tempfile.gettempdir(), 'mysql.sock')
+            logger.debug("'socket': {}".format(db_socket))
+        self.db_socket = db_socket
         self.port = port
         # Working variables
         self._mysqld_process = None
@@ -89,10 +90,13 @@ mysql_install_db --no-defaults --basedir={basedir} --datadir={datadir} \
         for line in _iter_stdout(p):
             logger.debug(line)
 
-    def get_connection_string(self, db_name):
+    def get_connection_string(self, db_name, db_socket=True):
+        db_url = socket.gethostbyname(socket.gethostname())
+        if db_socket is True:
+            db_socket = self.db_socket
         connection_string = (
-            'mysql://root:@localhost:{port}/{db_name}?unix_socket={socket}'
-            .format(port=self.port, socket=self.socket, db_name=db_name)
+            'mysql://root:@{db_url}:{db_port}/{db_name}?unix_socket={db_socket}'
+            .format(db_url=db_url, db_port=self.port, db_socket=self.db_socket, db_name=db_name)
         )
         return connection_string
 
@@ -100,15 +104,15 @@ mysql_install_db --no-defaults --basedir={basedir} --datadir={datadir} \
         if self._mysqld_process is not None:
             logger.info(
                 "MySQL is already running (pid: {}, socket: '{}')."
-                .format(self._mysqld_process, self.socket))
+                .format(self._mysqld_process, self.db_socket))
             return
         logger.debug('===== Starting MySQL daemon... =====')
         system_command = """\
 mysqld --no-defaults --basedir={basedir} --datadir={datadir} \
-    --socket='{socket}' --port={port} \
+    --socket='{db_socket}' --port={port} \
     --default-storage-engine=MyISAM \
     --external-locking \
-""".format(basedir=self.basedir, datadir=self.datadir, socket=self.socket, port=self.port)
+""".format(basedir=self.basedir, datadir=self.datadir, db_socket=self.db_socket, port=self.port)
         # --delay-key-write=OFF --query-cache-size=0
         logger.debug(system_command)
         self._mysqld_process = _start_subprocess(system_command)
@@ -133,12 +137,12 @@ mysqld --no-defaults --basedir={basedir} --datadir={datadir} \
 
     def allow_external_connections(self):
         system_command = """\
-mysql -u root --socket {socket} -e "\
+mysql -u root --socket {db_socket} -e "\
 drop user if exists 'root'@'%';
 create user 'root'@'%'; \
 grant all on *.* to 'root'@'%'; \
 flush privileges;" \
-""".format(socket=self.socket)
+""".format(db_socket=self.db_socket)
         p = _start_subprocess(system_command)
         for line in _iter_stdout(p):
             logger.debug(line)
