@@ -13,6 +13,7 @@ import shlex
 import logging
 import atexit
 import socket
+from kmtools.db_tools import make_connection_string
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +43,46 @@ def _iter_stdout(p):
         yield line
 
 
-class MySQLDaemon:
+class _Daemon:
 
-    def __init__(self, *, basedir=None, datadir=None, db_socket=None, port=3306):
+    def get_connection_string(self, db_schema=None, db_url='localhost'):
+        """Return database connection string (e.g. for sqlalchemy).
+
+        Parameters
+        ----------
+        db_schema : db_schema
+            Default database schema for the connection.
+        db_url : str
+            The IP address / domain name of the computer running the database server.
+            With MySQL, if db_url == 'localhost', the client will try to establish
+            the connection using a Unix domain socket instead.
+        """
+        # Set `db_url`
+        if db_url is None:
+            db_url = socket.gethostbyname(socket.gethostname())
+
+        # Set `db_socket` if neccessary
+        if db_url == 'localhost':
+            db_socket = self.db_socket
+            assert db_socket
+        else:
+            db_socket = None
+
+        return make_connection_string(
+            db_type=self.db_type,
+            db_username='root',
+            db_url=db_url,
+            db_port=str(self.db_port),  # TODO: remove str() cast when updated
+            db_schema=db_schema,
+            db_socket=db_socket,
+        )
+
+
+class MySQLDaemon(_Daemon):
+
+    db_type = 'mysql'
+
+    def __init__(self, *, basedir=None, datadir=None, db_socket=None, db_port=3306):
         if basedir is None:
             basedir = op.dirname(op.dirname(sys.executable))
             logger.debug("'basedir': {}".format(basedir))
@@ -57,7 +95,7 @@ class MySQLDaemon:
             db_socket = op.join(tempfile.gettempdir(), 'mysql.sock')
             logger.debug("'socket': {}".format(db_socket))
         self.db_socket = db_socket
-        self.port = port
+        self.db_port = db_port
         # Working variables
         self._mysqld_process = None
 
@@ -90,30 +128,27 @@ mysql_install_db --no-defaults --basedir={basedir} --datadir={datadir} \
         for line in _iter_stdout(p):
             logger.debug(line)
 
-    def get_connection_string(self, db_name, db_socket=True):
-        db_url = socket.gethostbyname(socket.gethostname())
-        if db_socket is True:
-            db_socket = self.db_socket
-        connection_string = (
-            'mysql://root:@{db_url}:{db_port}/{db_name}?unix_socket={db_socket}'
-            .format(db_url=db_url, db_port=self.port, db_socket=self.db_socket, db_name=db_name)
-        )
-        return connection_string
-
     def start(self):
         if self._mysqld_process is not None:
             logger.info(
                 "MySQL is already running (pid: {}, socket: '{}')."
                 .format(self._mysqld_process, self.db_socket))
             return
+
         logger.debug('===== Starting MySQL daemon... =====')
+        # --delay-key-write=OFF --query-cache-size=0
         system_command = """\
 mysqld --no-defaults --basedir={basedir} --datadir={datadir} \
-    --socket='{db_socket}' --port={port} \
+    --socket='{db_socket}' --port={db_port} \
     --default-storage-engine=MyISAM \
     --external-locking \
-""".format(basedir=self.basedir, datadir=self.datadir, db_socket=self.db_socket, port=self.port)
-        # --delay-key-write=OFF --query-cache-size=0
+""".format(
+            basedir=self.basedir,
+            datadir=self.datadir,
+            db_socket=self.db_socket,
+            db_port=self.db_port
+        )
+
         logger.debug(system_command)
         self._mysqld_process = _start_subprocess(system_command)
         for line in _iter_stdout(self._mysqld_process):

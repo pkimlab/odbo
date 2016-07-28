@@ -27,12 +27,13 @@ class TestMySQL:
         )
         mysqld.install_db()
         mysqld.start()
+        mysqld.allow_external_connections()
         # Save state
         cls.mysqld = mysqld
         cls.pid = mysqld._mysqld_process.pid
         logger.debug(
-            "Process id: {}, status: {}"
-            .format(cls.pid, psutil.Process(cls.pid).status()))
+            "Process id: {}, status: {}".format(
+                cls.pid, psutil.Process(cls.pid).status()))
 
     @classmethod
     def teardown_class(cls):
