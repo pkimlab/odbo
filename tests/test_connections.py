@@ -46,8 +46,10 @@ class TestMySQL:
     def test_connection(self):
         db_schema = 'testing'
         shared_folder = op.join(self.tempdir, 'share')
+        connection_string = self.mysqld.get_connection_string(db_schema)
+        logger.debug("connection_string: {}".format(connection_string))
         db = datapkg.MySQL(
-            connection_string=self.mysqld.get_connection_string(db_schema),
+            connection_string=connection_string,
             shared_folder=shared_folder,
             storage_host=None,
             echo=False,
