@@ -6,41 +6,15 @@ appear concomitant with database commands.
 import sys
 import os
 import os.path as op
-import time
 import tempfile
-import subprocess
-import shlex
 import logging
 import atexit
 import socket
+
 from kmtools.db_tools import make_connection_string
+from datapkg import utils
 
 logger = logging.getLogger(__name__)
-
-
-def _start_subprocess(system_command):
-    p = subprocess.Popen(
-        shlex.split(system_command),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        universal_newlines=True,
-        bufsize=1)
-    return p
-
-
-def _iter_stdout(p):
-    for line in p.stdout:
-        line = line.strip()
-        if ' [Note] ' in line:
-            line = line.partition(' [Note] ')[-1]
-        if not line:
-            # logger.debug("DONE! (reached an empty line)")
-            if p.poll() is not None:
-                return
-            else:
-                time.sleep(0.1)
-                continue
-        yield line
 
 
 class _Daemon:
@@ -78,11 +52,14 @@ class _Daemon:
         )
 
 
+# === MySQL / MariaDB ===
+
 class MySQLDaemon(_Daemon):
 
     db_type = 'mysql'
+    _default_storage_engine = 'MyISAM'
 
-    def __init__(self, *, basedir=None, datadir=None, db_socket=None, db_port=3306):
+    def __init__(self, *, basedir=None, datadir=None, db_socket=None, db_port=9306):
         if basedir is None:
             basedir = op.dirname(op.dirname(sys.executable))
             logger.debug("'basedir': {}".format(basedir))
@@ -93,42 +70,52 @@ class MySQLDaemon(_Daemon):
         self.datadir = datadir
         if db_socket is None:
             db_socket = op.join(tempfile.gettempdir(), 'mysql.sock')
-            logger.debug("'socket': {}".format(db_socket))
+            logger.debug("'db_socket': {}".format(db_socket))
         self.db_socket = db_socket
         self.db_port = db_port
         # Working variables
         self._mysqld_process = None
 
     def install_db(self):
+        log_files = [op.join(self.datadir, x) for x in ['ib_logfile0', 'ib_logfile1']]
+        for log_file in log_files:
+            if op.isfile(log_file):
+                os.remove(log_file)
         system_command = """\
 mysql_install_db --no-defaults --basedir={basedir} --datadir={datadir} \
 """.format(basedir=self.basedir, datadir=self.datadir)
         logger.debug('===== Initializing MySQL database... =====')
         logger.debug(system_command)
-        p = _start_subprocess(system_command)
-        for line in _iter_stdout(p):
+        p = utils._start_subprocess(system_command)
+        for line in utils._iter_stdout(p):
             logger.debug(line)
 
-    def myisampack(self, schema_name):
-        data_files = [
-            op.abspath(op.join(self.datadir, schema_name, f))
-            for f in os.listdir(op.join(self.datadir, schema_name))
-            if op.splitext(f)[-1] == '.MYI'
-        ]
-        data_files_str = " ".join("'{}'".format(op.abspath(f)) for f in data_files)
-        # Compress files
-        system_command = "myisampack --no-defaults '{}'".format(data_files_str)
-        # allowed_returncodes=[0, 2]
-        p = _start_subprocess(system_command)
-        for line in _iter_stdout(p):
-            logger.debug(line)
-        # Re-create index
-        system_command = "myisamchk -rq '{}'".format(data_files_str)
-        p = _start_subprocess(system_command)
-        for line in _iter_stdout(p):
-            logger.debug(line)
+    def _format_kwargs(self, **kwargs):
+        """
+        Examples
+        --------
+        >>> mysqld = MySQLDaemon()
+        >>> sorted(mysqld._format_kwargs(aaa=None, bbb='xxx', ccc=300).split())
+        ['--aaa', '--bbb=xxx', '--ccc=300']
+        """
+        kwargs_string = ''
+        for x, y in kwargs.items():
+            if y is None:
+                kwargs_string += ' --{}'.format(x)
+            else:
+                kwargs_string += ' --{}={}'.format(x, y)
+        return kwargs_string
 
-    def start(self):
+    def start(
+            self,
+            default_storage_engine=None,
+            external_locking=None,
+            innodb_fast_shutdown=None,
+            open_files_limit=4096,
+            max_connections=150,
+            **kwargs):
+        if default_storage_engine is None:
+            default_storage_engine = self._default_storage_engine
         if self._mysqld_process is not None:
             logger.info(
                 "MySQL is already running (pid: {}, socket: '{}')."
@@ -140,18 +127,24 @@ mysql_install_db --no-defaults --basedir={basedir} --datadir={datadir} \
         system_command = """\
 mysqld --no-defaults --basedir={basedir} --datadir={datadir} \
     --socket='{db_socket}' --port={db_port} \
-    --default-storage-engine=MyISAM \
-    --external-locking \
+    --max_connections={max_connections} \
+    --open_files_limit={open_files_limit} \
+    --default_storage_engine={default_storage_engine} \
+    {kwargs} \
 """.format(
             basedir=self.basedir,
             datadir=self.datadir,
             db_socket=self.db_socket,
-            db_port=self.db_port
+            db_port=self.db_port,
+            max_connections=max_connections,
+            open_files_limit=open_files_limit,
+            default_storage_engine=default_storage_engine,
+            kwargs=self._format_kwargs(**kwargs),
         )
 
         logger.debug(system_command)
-        self._mysqld_process = _start_subprocess(system_command)
-        for line in _iter_stdout(self._mysqld_process):
+        self._mysqld_process = utils._start_subprocess(system_command)
+        for line in utils._iter_stdout(self._mysqld_process):
             logger.debug(line)
             if 'mysqld: ready for connections' in line:
                 break
@@ -163,7 +156,7 @@ mysqld --no-defaults --basedir={basedir} --datadir={datadir} \
             logger.debug("MySQL daemon is already shut down!")
             return
         self._mysqld_process.terminate()
-        for line in _iter_stdout(self._mysqld_process):
+        for line in utils._iter_stdout(self._mysqld_process):
             logger.debug(line)
         logger.debug('mysqld poll: {}'.format(self._mysqld_process.poll()))
         logger.debug('mysqld returncode: {}'.format(self._mysqld_process.returncode))
@@ -178,6 +171,6 @@ create user 'root'@'%'; \
 grant all on *.* to 'root'@'%'; \
 flush privileges;" \
 """.format(db_socket=self.db_socket)
-        p = _start_subprocess(system_command)
-        for line in _iter_stdout(p):
+        p = utils._start_subprocess(system_command)
+        for line in utils._iter_stdout(p):
             logger.debug(line)

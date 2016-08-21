@@ -1,7 +1,7 @@
 import os.path as op
 import argparse
 import logging
-from .connections import MySQL
+from .connection import MySQLConnection
 
 logger = logging.getLogger(__name__)
 
@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 def _file2db(args):
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
-        logging.getLogger().setLevel(logging.DEBUG)
-    db = MySQL(
+        logging.getLogger(op.dirname(__file__)).setLevel(logging.DEBUG)
+    db = MySQLConnection(
         connection_string=args.connection_string,
         # NOTEBOOK_NAME
         shared_folder=op.dirname(args.file),

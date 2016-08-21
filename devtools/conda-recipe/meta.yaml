@@ -48,6 +48,7 @@ test:
     - pytest
     - pytest-runner
     - pytest-cov
+    - pytest-logging
     - flake8
   imports:
     - datapkg
@@ -58,4 +59,4 @@ test:
 about:
   home: http://kimlaborg.github.io/datapkg
   license: MIT
-  summary: Helpful bioinformatics scripts.
+  summary: Start and interact with databases through Python / Pandas.

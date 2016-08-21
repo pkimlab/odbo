@@ -1,6 +1,7 @@
 import os.path as op
 import string
 import logging
+import time
 import re
 import math
 import pandas as pd
@@ -27,6 +28,31 @@ STG_HOST = None
 
 #: Extensions that get stripped when creating a database table from a text file
 REMOVED_EXTENSIONS = ['.gz', '.tsv', '.csv', '.txt', '.vcf']
+
+
+def _start_subprocess(system_command):
+    p = subprocess.Popen(
+        shlex.split(system_command),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+        bufsize=1)
+    return p
+
+
+def _iter_stdout(p):
+    for line in p.stdout:
+        line = line.strip()
+        if ' [Note] ' in line:
+            line = line.partition(' [Note] ')[-1]
+        if not line:
+            if p.poll() is None:
+                time.sleep(0.1)
+                continue
+            else:
+                # logger.debug("DONE! (reached an empty line)")
+                return
+        yield line
 
 
 def format_unprintable(string):
