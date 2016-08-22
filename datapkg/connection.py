@@ -1,16 +1,27 @@
 import os
 import os.path as op
 import logging
-import string
 from collections import Counter
 import csv
 import pandas as pd
 import sqlalchemy as sa
-from ._helper import parse_connection_string, make_connection_string, run_command, retry_database
-from ._df_helper import get_tablename, get_df_dtypes, get_file_dtypes, format_columns
-from ._format_file_bash import decompress
+
+from kmtools.db_tools import parse_connection_string, make_connection_string
+from datapkg.daemon import MySQLDaemon
+from datapkg.table import MySQLTable
+from datapkg.utils import (
+    run_command, retry_database, get_tablename, get_df_dtypes, get_file_dtypes, format_columns,
+)
+from datapkg._format_file_bash import decompress
 
 logger = logging.getLogger(__name__)
+
+
+class _Connection:
+    pass
+
+
+# === MySQL / MariaDB ===
 
 MYSQL_CSV_OPTS = dict(
     sep='\t',
@@ -22,46 +33,37 @@ MYSQL_CSV_OPTS = dict(
 )
 
 
-class Table:
-
-    def __init__(self, name, df, dtypes, tempfile):
-        self.name = name
-        self.df = df
-        self.dtypes = dtypes
-        self.tempfile = tempfile
-
-
-class MySQL:
+class MySQLConnection(_Connection):
     """Load and save data from a database using intermediary csv files.
 
     Much faster than pandas ``df.to_sql(...)``.
     """
 
-    _default_db_engine = 'InnoDB'
-
     def __init__(
-            self, connection_string, shared_folder, storage_host, echo=False, db_engine=None,
-            use_compression=False):
-        global STG_HOST
+            self, connection_string, shared_folder, storage_host, datadir=None,
+            echo=False, db_engine=None, use_compression=False):
         self.connection_string = connection_string
         self.shared_folder = op.abspath(shared_folder)
         os.makedirs(self.shared_folder, exist_ok=True)
         self.storage_host = storage_host
-        self.db_engine = db_engine if db_engine is not None else self._default_db_engine
+        self.datadir = datadir
+        self.db_engine = (
+            db_engine if db_engine is not None else MySQLDaemon._default_storage_engine)
         self.use_compression = use_compression
         #
-        self.engine = sa.create_engine(connection_string, echo=echo)
+        self.engine = sa.create_engine(self.connection_string, echo=echo)
         try:
             self.db_schema = self._get_db_schema()
         except sa.exc.OperationalError:
             db_params = parse_connection_string(connection_string)
-            _schema = db_params['db_name']
-            db_params['db_name'] = ''
+            _schema = db_params['db_schema']
+            db_params['db_schema'] = ''
+            logger.debug("db_params: {}".format(db_params))
             _connection_string = make_connection_string(**db_params)
+            logger.debug("_connection_string: {}".format(_connection_string))
             _engine = sa.create_engine(_connection_string, echo=echo)
             _engine.execute('CREATE DATABASE {}'.format(_schema))
             self.db_schema = self._get_db_schema()
-        STG_HOST = self.storage_host
 
     def _get_db_schema(self):
         return set(pd.read_sql_query('show databases;', self.engine)['Database'])
@@ -78,7 +80,7 @@ class MySQL:
             df = df[:0]
         df.to_sql(tablename, self.engine, dtype=dtypes, index=False, if_exists=if_exists)
         # Change storage engine
-        if self.db_engine != self._default_db_engine:
+        if self.db_engine != MySQLDaemon._default_storage_engine:
             self.engine.execute(
                 'ALTER TABLE {tablename} ENGINE={db_engine};'  # ROW_FORMAT = FIXED
                 .format(tablename=tablename, db_engine=self.db_engine))
@@ -94,18 +96,14 @@ class MySQL:
 
         # Database options
         db_params = parse_connection_string(self.connection_string)
-        if 'password' in db_params:
-            db_params['password'] = (
-                '-p {}'.format(db_params['password']) if db_params['password'] else ''
-            )
 
         # Run
-        if db_params['socket']:
-            header = "--socket={socket}".format(**db_params)
-        elif db_params['password']:
-            header = "-h {host_ip} -P {host_port} -p{password}".format(**db_params)
+        if db_params['db_socket']:
+            header = "--socket={db_socket}".format(**db_params)
+        elif db_params['db_password']:
+            header = "-h {db_url} -P {db_port} -p{db_password}".format(**db_params)
         else:
-            header = "-h {host_ip} -P {host_port}".format(**db_params)
+            header = "-h {db_url} -P {db_port}".format(**db_params)
 
         if quotechar == '"':
             quotechar = '\\"'
@@ -118,55 +116,13 @@ class MySQL:
         else:
             quoting = ""
         system_command = """\
-mysql --local-infile {header} -u {username} {db_name} -e \
+mysql --local-infile {header} -u {db_username} {db_schema} -e \
 "load data local infile '{tsv_filepath}' into table `{tablename}` \
 fields terminated by {sep} {quoting} ignore {skiprows} lines; \
  show warnings;" \
 """.format(header=header, tsv_filepath=tsv_filepath, tablename=tablename, skiprows=skiprows,
            sep=repr(sep), quoting=quoting, **db_params)
         run_command(system_command)
-
-    def add_idx_column(self, table_name, column_name='idx', auto_increment=1):
-        sql_command = """\
-ALTER TABLE {table_name}
-AUTO_INCREMENT = {auto_increment},
-ADD COLUMN {column_name} BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST
-""".format(table_name=table_name, column_name=column_name, auto_increment=auto_increment)
-        self.engine.execute(sql_command)
-        max_id = pd.read_sql_query(
-            "SELECT MAX({column_name}) from {table_name}".format(
-                table_name=table_name, column_name=column_name),
-            self.engine,
-        )
-        return int(max_id.values)
-
-    def get_indexes(self, tablename):
-        db_params = parse_connection_string(self.connection_string)
-        db_params['db_name']
-        sql_query = """\
-SELECT DISTINCT INDEX_NAME FROM information_schema.statistics
-WHERE table_schema = '{db_name}'
-AND table_name = '{tablename}';
-""".format(db_name=db_params['db_name'], tablename=tablename)
-        existing_indexes = set(pd.read_sql_query(sql_query, self.engine)['INDEX_NAME'])
-        return existing_indexes
-
-    def create_indexes(self, tablename, index_commands):
-        existing_indexes = self.get_indexes(tablename)
-        valid_indexes = [c for c in string.ascii_uppercase if c not in existing_indexes]
-        for index_name, index_command in zip(valid_indexes, index_commands):
-            columns, unique = index_command
-            if not isinstance(columns, (list, tuple)):
-                columns = [columns]
-            sql_command = (
-                "create {unique} index {index_name} on {tablename} ({columns});"
-                .format(
-                    unique='unique' if unique else '',
-                    index_name=index_name,
-                    tablename=tablename,
-                    columns=", ".join(columns))
-            )
-            self.engine.execute(sql_command)
 
     def import_file(
             self, file, tablename=None, dtypes=None, extra_dtypes=None,
@@ -227,7 +183,9 @@ AND table_name = '{tablename}';
                 os.remove(outfile)
             except FileNotFoundError:
                 pass
-        return Table(name=tablename, df=df, dtypes=dtypes, tempfile=outfile)
+        return MySQLTable(
+            name=tablename, df=df[0:0], dtypes=dtypes, tempfile=outfile,
+            connection_string=self.connection_string, engine=self.engine, datadir=self.datadir)
 
     def import_df(
             self, df, tablename=None, dtypes=None, extra_dtypes=None, use_temp_file=True,
@@ -265,4 +223,6 @@ AND table_name = '{tablename}';
             self.load_file_to_database(tsv_file, tablename, '\t', skiprows=1)
         else:
             tsv_file = None
-        return Table(name=tablename, df=df[0:0], dtypes=dtypes, tempfile=tsv_file)
+        return MySQLTable(
+            name=tablename, df=df[0:0], dtypes=dtypes, tempfile=tsv_file,
+            connection_string=self.connection_string, engine=self.engine, datadir=self.datadir)

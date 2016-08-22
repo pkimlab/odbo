@@ -1,8 +1,8 @@
 # flake8: noqa
-from ._helper import *
-from ._df_helper import *
-from .daemons import MySQLDaemon
-from .connections import MySQL
+from .utils import *
+from .table import MySQLTable
+from .connection import MySQLConnection
+from .daemon import MySQLDaemon
 
 __all__ = [
     '_format_file_python',

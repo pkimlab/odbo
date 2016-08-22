@@ -1,13 +1,19 @@
 import os.path as op
 import string
 import logging
+import time
 import re
 import math
 import pandas as pd
 from sqlalchemy.dialects.mysql import INTEGER, DOUBLE, BOOLEAN, VARCHAR, MEDIUMTEXT
-from ._helper import run_command
+import subprocess
+import shlex
+from retrying import retry
+import paramiko
+import sqlalchemy as sa
 
 logger = logging.getLogger(__name__)
+logging.getLogger("paramiko").setLevel(logging.WARNING)
 
 INTEGER = INTEGER()
 DOUBLE = DOUBLE()
@@ -22,6 +28,152 @@ STG_HOST = None
 
 #: Extensions that get stripped when creating a database table from a text file
 REMOVED_EXTENSIONS = ['.gz', '.tsv', '.csv', '.txt', '.vcf']
+
+
+def _start_subprocess(system_command):
+    p = subprocess.Popen(
+        shlex.split(system_command),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        universal_newlines=True,
+        bufsize=1)
+    return p
+
+
+def _iter_stdout(p):
+    for line in p.stdout:
+        line = line.strip()
+        if ' [Note] ' in line:
+            line = line.partition(' [Note] ')[-1]
+        if not line:
+            if p.poll() is None:
+                time.sleep(0.1)
+                continue
+            else:
+                # logger.debug("DONE! (reached an empty line)")
+                return
+        yield line
+
+
+def format_unprintable(string):
+    r"""Escape tabs (\t), newlines (\n), etc. for system commands and printing.
+
+    Examples
+    --------
+    >>> format_unprintable('\t')
+    '\\t'
+    """
+    return repr(string).strip("'")
+
+
+# === Retrying ===
+def _check_exception(exc, valid_exc):
+    logger.error('The following exception occured:\n{}'.format(exc))
+    to_retry = isinstance(exc, valid_exc)
+    if to_retry:
+        logger.error('Retrying...')
+    return to_retry
+
+
+def retry_database(fn):
+    """Decorator to keep probing the database untill you succeed."""
+    r = retry(
+        retry_on_exception=lambda exc:
+            _check_exception(exc, valid_exc=sa.exc.OperationalError),
+        wait_exponential_multiplier=1000,
+        wait_exponential_max=60000,
+        stop_max_attempt_number=7)
+    return r(fn)
+
+
+def rety_subprocess(fn):
+    r = retry(
+        retry_on_exception=lambda exc:
+            _check_exception(exc, valid_exc=MySubprocessError),
+        wait_exponential_multiplier=1000,
+        wait_exponential_max=60000,
+        stop_max_attempt_number=7)
+    return r(fn)
+
+
+class MySubprocessError(subprocess.SubprocessError):
+
+    def __init__(self, command, host, stdout, stderr, returncode):
+        self.command = command
+        self.host = host
+        self.stdout = stdout
+        self.stderr = stderr
+        self.returncode = returncode
+
+
+# === Run command ====
+class MySSHClient:
+
+    def __init__(self, ssh_host):
+        self.ssh_host = ssh_host
+        self.ssh = paramiko.SSHClient()
+        self.ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+    def __enter__(self):
+        logger.debug("Initializing SSH client: '{}'".format(self.ssh_host))
+        self.ssh.connect(self.ssh_host)
+        return self.ssh
+
+    def __exit__(self, exc_type, exc_value, exc_tb):
+        self.ssh.close()
+        if exc_type or exc_value or exc_tb:
+            import traceback
+            logger.error(exc_type)
+            logger.error(exc_value)
+            logger.error(traceback.print_tb(exc_tb))
+            return True
+        else:
+            return False
+
+
+@rety_subprocess
+def run_command(system_command, host=None, *, shell=False, allowed_returncodes=[0]):
+    """Run system command either locally or over ssh."""
+    # === Run command ===
+    logger.debug(system_command)
+    if host is not None:
+        logger.debug("Running on host: '{}'".format(host))
+        with MySSHClient(host) as ssh:
+            _stdin, _stdout, _stderr = ssh.exec_command(system_command)
+            stdout = _stdout.read().decode()
+            stderr = _stderr.read().decode()
+            returncode = _stdout.channel.recv_exit_status()
+    else:
+        logger.debug("Running locally")
+        sp = subprocess.run(
+            system_command if shell else shlex.split(system_command),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=shell, universal_newlines=True,
+        )
+        stdout = sp.stdout
+        stderr = sp.stderr
+        returncode = sp.returncode
+    # === Process results ===
+    stdout_lower = stdout.lower()
+    if returncode not in allowed_returncodes:
+        error_message = (
+            "Encountered an error: '{}'\n".format(stderr) +
+            "System command: '{}'\n".format(system_command) +
+            "Output: '{}'\n".format(stdout) +
+            "Return code: {}".format(returncode)
+        )
+        logger.error(error_message)
+        raise MySubprocessError(
+            command=system_command,
+            host=host,
+            stdout=stdout,
+            stderr=stderr,
+            returncode=returncode,
+        )
+    elif 'warning' in stdout_lower or 'error' in stdout_lower:
+        logger.warning("Command ran with warnings / errors:\n{}".format(stdout.strip()))
+    else:
+        logger.debug("Command ran successfully:\n{}".format(stdout.strip()))
+    return stdout, stderr, returncode
 
 
 def get_tablename(file):
@@ -73,6 +225,14 @@ def _format_column(name):
     name = name.replace(' ', '_')
     name = name.replace('(', '_').replace(')', '')
     name = name.replace('%', 'pc')
+    keywords = [
+        'uniprot', 'grch', 'refseq',
+    ]
+    for keyword in keywords:
+        while keyword in name.lower() and keyword not in name:
+            start = name.lower().index(keyword)
+            end = start + len(keyword)
+            name = name[:start] + keyword + name[end:]
     if name.lower() in ['uniprot_id', 'grch']:
         return name.lower()
     # CamelCase to pothole_case

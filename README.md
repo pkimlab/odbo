@@ -1,6 +1,6 @@
 # DataPkg
 
-[![anaconda](https://anaconda.org/kimlab/datapkg/badges/version.svg)](https://anaconda.org/kimlab/datapkg)
+[![anaconda](https://anaconda.org/kimlab/datapkg/badges/version.svg?style=flat-square)](https://anaconda.org/kimlab/datapkg)
 [![docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square&?version=latest)](http://kimlaborg.github.io/datapkg)
 [![travis](https://img.shields.io/travis/kimlaborg/datapkg.svg?style=flat-square)](https://travis-ci.org/kimlaborg/datapkg)
 [![codecov](https://img.shields.io/codecov/c/github/kimlaborg/datapkg.svg?style=flat-square)](https://codecov.io/gh/kimlaborg/datapkg)
