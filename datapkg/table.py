@@ -108,7 +108,6 @@ ADD COLUMN {column_name} BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST
         logger.info(
             "File size savings: {:,.2f} MB ({:.2f} %)"
             .format(file_size_after, file_size_after / file_size_before * 100))
-        return p1, p2
 
     def compress_all(self):
         """Compress all MyISAM files in a given directory."""
