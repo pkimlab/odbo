@@ -133,6 +133,9 @@ fields terminated by {sep} {quoting} ignore {skiprows} lines; \
         ----------
         additional_substitutions : list of tuples
             Additional substitutions to perform on the file before loading to database.
+        skiprows : int
+            Number of *non-header* rows to ignore.
+            If your file does not have a header and you want to skip 0 rows, use skiprows=-1.
         vargs : dict
             Options to pass to `pd.read_csv`.
         """
@@ -173,7 +176,11 @@ fields terminated by {sep} {quoting} ignore {skiprows} lines; \
         self.create_db_table(tablename, df, dtypes)
 
         # Upload file to database
-        db_skiprows = csv_opts.get('skiprows', 0) + 1
+
+        if csv_opts.get('names') is None:
+            db_skiprows = csv_opts.get('skiprows', 0) + 1  # skip the header
+        else:
+            db_skiprows = csv_opts.get('skiprows', 0)
         self.load_file_to_database(
             outfile, tablename, csv_opts['sep'], csv_opts['quotechar'], csv_opts['quoting'],
             db_skiprows)

@@ -2,7 +2,7 @@
 from .utils import *
 from .table import MySQLTable
 from .connection import MySQLConnection
-from .daemon import MySQLDaemon
+from .daemon import MySQLDaemon, start_database
 
 __all__ = [
     '_format_file_python',
