@@ -3,7 +3,7 @@ language: generic
 env:
   global:
     - PKG_NAME="datapkg"
-    - DATAPKG_CONNECTION_STRING="mysql://root:@localhost:9306"
+    - DATAPKG_CONNECTION_STRING="mysql://root:@127.0.0.1:3306"
 install:
   - wget --no-verbose -O anaconda.sh https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh;
   - bash anaconda.sh -b -p $HOME/anaconda
@@ -20,14 +20,16 @@ install:
   - conda update -q conda
   - conda install -q --yes conda-build anaconda-client git-lfs
   - git lfs pull
-  - pip install codecov
-  - travis_wait 60 conda build -q devtools/conda-recipe/
+  - conda build devtools/conda-recipe/
 script:
+  - conda create -n _test $PKG_NAME --use-local
   - source activate _test
+  - pip install pytest flake8 pytest-runner pytest-cov pytest-logging
   - py.test -vvv
   - source deactivate
 after_success:
   - echo "Success!"
+  - pip install codecov
   - codecov
   - anaconda -t $ANACONDA_TOKEN upload /home/travis/anaconda/conda-bld/linux-64/*.tar.bz2
   - devtools/travis-ci/build-docs.sh
