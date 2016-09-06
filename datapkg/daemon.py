@@ -17,6 +17,37 @@ from datapkg import utils
 logger = logging.getLogger(__name__)
 
 
+def start_database(db_type, *args, **kwargs):
+    db_type = db_type.lower()
+    if db_type not in ['mysql']:
+        raise Exception("Unsupported DB_TYPE = '{}'".format(db_type))
+    if db_type == 'mysql':
+        return start_mysql_database(*args, **kwargs)
+
+
+def start_mysql_database(
+        db_data_dir, db_socket, db_port, allow_external_connections=True):
+    mysqld = MySQLDaemon(
+        datadir=db_data_dir,
+        db_socket=db_socket,
+        db_port=db_port,
+    )
+    if not op.exists(os.environ['DB_SOCKET']):
+        try:
+            logger.info('Starting MySQL database...')
+            mysqld.install_db()
+            mysqld.start()
+            if allow_external_connections:
+                mysqld.allow_external_connections()
+        except Exception as e:
+            logger.error(
+                "Failed to start database beacuse of error:\n    {}: {}".format(type(e), e))
+            mysqld.stop()
+    else:
+        logger.info('MySQL database already running...')
+    return mysqld
+
+
 class _Daemon:
 
     def get_connection_string(self, db_schema=None, db_url='localhost'):
