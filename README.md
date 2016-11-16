@@ -19,6 +19,7 @@ mysqld --no-defaults --basedir=$HOME/anaconda --datadir=$HOME/tmp/mysql_db
 
 ## TODO
 
+- [ ] Lower flake8 max-complexity to 10.
 - [ ] PostgreSQL support.
 - [ ] HDF5 support.
 - [ ] MariaDB CollumnStore support.
