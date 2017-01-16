@@ -1,10 +1,12 @@
+import logging
 import os
 import os.path as op
 import tempfile
 import time
+
 import pandas as pd
 import pytest
-import logging
+
 import odbo
 
 logger = logging.getLogger(__name__)

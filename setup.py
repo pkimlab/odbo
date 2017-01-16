@@ -1,6 +1,6 @@
 import os.path as op
 
-from setuptools import setup, find_packages
+from setuptools import setup
 
 
 def _read_md_as_rst(file):
@@ -40,7 +40,7 @@ setup(
         "Topic :: Scientific/Engineering :: Bio-Informatics",
     ],
     license='MIT',
-    packages=find_packages('odbo'),
-    package_data={},
+    packages=['odbo'],
+    package_data={'odbo': 'data/*.cnf'},
     entry_points={'console_scripts': ['odbo=odbo.__main__:main']},
 )

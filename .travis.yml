@@ -24,9 +24,10 @@ install:
 script:
   - conda create -n _test $PKG_NAME --use-local
   - source activate _test
-  - pip install flake8 pytest pytest-runner pytest-cov pytest-logging
-  - flake8 .
-  - py.test -vvv
+  - pip install flake8 isort pytest pytest-runner pytest-cov pytest-logging
+  - flake8
+  - isort -c
+  - py.test
   - source deactivate
 after_success:
   - echo "Success!"

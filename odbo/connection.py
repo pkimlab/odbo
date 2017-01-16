@@ -7,13 +7,12 @@ from collections import Counter
 import pandas as pd
 import sqlalchemy as sa
 
+from kmtools.db_tools import make_connection_string, parse_connection_string
+from kmtools.df_tools import format_columns, get_df_dtypes, get_file_dtypes, get_tablename
+from kmtools.system_tools import retry_database, run_command
 from odbo._format_file_bash import decompress
 from odbo.daemon import MySQLDaemon
 from odbo.table import MySQLTable
-from kmtools.db_tools import make_connection_string, parse_connection_string
-from kmtools.df_tools import (format_columns, get_df_dtypes, get_file_dtypes,
-                              get_tablename)
-from kmtools.system_tools import retry_database, run_command
 
 logger = logging.getLogger(__name__)
 

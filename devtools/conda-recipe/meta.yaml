@@ -1,8 +1,8 @@
-{% set version = "0.0.6" %}
+{% set data = load_setup_py_data() %}
 
 package:
   name: odbo
-  version: {{ version }}
+  version: {{ data.get('version') }}
 
 source:
   path: ../../
@@ -25,7 +25,6 @@ requirements:
     - lxml
     - pycurl
     - paramiko
-    - biopython
     - retrying
     - psutil
     # Scientific
@@ -34,22 +33,16 @@ requirements:
     - pandas
     - scikit-learn
     # Database clients
-    - sqlalchemy
+    - mysql
     - mysqlclient
-    - psycopg2
+    - sqlalchemy
     # Binaries
     - p7zip
-    - mariadb-server
     # Kimlab
-    - kmtools
+    - kmbio
+    - kmtools >=0.0.16
 
 test:
-  requires:
-    - pytest
-    - pytest-runner
-    - pytest-cov
-    - pytest-logging
-    - flake8
   imports:
     - odbo
   commands:

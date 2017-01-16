@@ -1,14 +1,16 @@
+import logging
 import os
 import os.path as op
-import tempfile
-import odbo
-import logging
-import psutil
-import subprocess
 import shlex
-import pytest
 import shutil
+import subprocess
+import tempfile
+
 import pandas as pd
+import psutil
+import pytest
+
+import odbo
 from odbo import get_tablename
 
 logger = logging.getLogger(__name__)

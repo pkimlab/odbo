@@ -6,7 +6,6 @@ import logging
 import os
 import os.path as op
 
-import odbo
 from kmtools import system_tools
 
 logger = logging.getLogger(__name__)
@@ -57,7 +56,8 @@ def decompress(
         )
     )
     logger.debug(system_command)
-    odbo.run_command(system_command, shell=True)  # NB: sed is CPU-bound, no need to do remotely
+    # NB: sed is CPU-bound, no need to do remotely
+    system_tools.run_command(system_command, shell=True)
     assert op.isfile(outfile)
     return outfile
 

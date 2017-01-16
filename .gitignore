@@ -3,6 +3,7 @@
 *.bak
 
 # Folders
+build
 dist
 _build
 __pycache__

@@ -1,12 +1,14 @@
+import logging
 import os
 import os.path as op
-import psutil
-import logging
-import tempfile
 import shutil
-import pytest
-import odbo
+import tempfile
 import time
+
+import psutil
+import pytest
+
+import odbo
 
 logger = logging.getLogger(__name__)
 
