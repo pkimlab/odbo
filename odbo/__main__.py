@@ -1,6 +1,7 @@
-import os.path as op
 import argparse
 import logging
+import os.path as op
+
 from .connection import MySQLConnection
 
 logger = logging.getLogger(__name__)
@@ -34,7 +35,7 @@ def configure_file2db_parser(sub_parsers):
     example = """
 Examples:
 
-    datapkg csv2sql example.cvs
+    odbo csv2sql example.cvs
 
 """
     parser = sub_parsers.add_parser(
@@ -60,7 +61,7 @@ on a database.""")
 
 def main():
     parser = argparse.ArgumentParser(
-        prog='datapkg',
+        prog='odbo',
     )
     sub_parsers = parser.add_subparsers(
         title='command',

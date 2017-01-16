@@ -1,7 +1,7 @@
 # !/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
-# DataPkg documentation build configuration file, created by
+# odbo documentation build configuration file, created by
 # sphinx-quickstart on Wed May  4 16:08:15 2016.
 #
 # This file is execfile()d with the current directory set to its
@@ -52,7 +52,7 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
-project = 'DataPkg'
+project = 'odbo'
 copyright = '2016, Alexey Strokach'
 author = 'Alexey Strokach'
 
@@ -206,7 +206,7 @@ html_static_path = ['_static']
 # html_search_scorer = 'scorer.js'
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 'DataPkgdoc'
+htmlhelp_basename = 'odbodoc'
 
 # -- Options for LaTeX output ---------------------------------------------
 
@@ -228,7 +228,7 @@ latex_elements = {
 # (source start file, target name, title,
 #  author, documentclass [howto, manual, or own class]).
 latex_documents = [
-    (master_doc, 'DataPkg.tex', 'DataPkg Documentation',
+    (master_doc, 'odbo.tex', 'odbo Documentation',
      'Alexey Strokach', 'manual'),
 ]
 
@@ -258,7 +258,7 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    (master_doc, 'datapkg', 'DataPkg Documentation',
+    (master_doc, 'odbo', 'odbo Documentation',
      [author], 1)
 ]
 
@@ -272,8 +272,8 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-    (master_doc, 'DataPkg', 'DataPkg Documentation',
-     author, 'DataPkg', 'One line description of project.',
+    (master_doc, 'odbo', 'odbo Documentation',
+     author, 'odbo', 'One line description of project.',
      'Miscellaneous'),
 ]
 

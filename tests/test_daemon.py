@@ -5,7 +5,7 @@ import logging
 import tempfile
 import shutil
 import pytest
-import datapkg
+import odbo
 import time
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,7 @@ def test_start_mysql():
     datadir = op.join(tempfile.gettempdir(), 'mysql_db')
     os.makedirs(datadir, exist_ok=True)
     # Start
-    mysqld = datapkg.MySQLDaemon(datadir=datadir)
+    mysqld = odbo.MySQLDaemon(datadir=datadir)
     mysqld.install_db()
     mysqld.start()
     time_0 = time.time()

@@ -1,12 +1,14 @@
+import logging
 import os
 import os.path as op
-import logging
+import shlex
 import string
 import subprocess
-import shlex
+
 import pandas as pd
+
 from kmtools.db_tools import parse_connection_string
-from datapkg.utils import _start_subprocess, _iter_stdout
+from kmtools.system_tools import iter_stdout, start_subprocess
 
 logger = logging.getLogger(__name__)
 
@@ -120,11 +122,11 @@ ADD COLUMN {column_name} BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST
         # Compress files
         system_command = "myisampack --no-defaults '{}'".format(data_files_str)
         # allowed_returncodes=[0, 2]
-        p = _start_subprocess(system_command)
-        for line in _iter_stdout(p):
+        p = start_subprocess(system_command)
+        for line in iter_stdout(p):
             logger.debug(line)
         # Re-create index
         system_command = "myisamchk -rq '{}'".format(data_files_str)
-        p = _start_subprocess(system_command)
-        for line in _iter_stdout(p):
+        p = start_subprocess(system_command)
+        for line in iter_stdout(p):
             logger.debug(line)

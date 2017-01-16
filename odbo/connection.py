@@ -1,18 +1,19 @@
+import csv
+import logging
 import os
 import os.path as op
-import logging
 from collections import Counter
-import csv
+
 import pandas as pd
 import sqlalchemy as sa
 
-from kmtools.db_tools import parse_connection_string, make_connection_string
-from datapkg.daemon import MySQLDaemon
-from datapkg.table import MySQLTable
-from datapkg.utils import (
-    run_command, retry_database, get_tablename, get_df_dtypes, get_file_dtypes, format_columns,
-)
-from datapkg._format_file_bash import decompress
+from odbo._format_file_bash import decompress
+from odbo.daemon import MySQLDaemon
+from odbo.table import MySQLTable
+from kmtools.db_tools import make_connection_string, parse_connection_string
+from kmtools.df_tools import (format_columns, get_df_dtypes, get_file_dtypes,
+                              get_tablename)
+from kmtools.system_tools import retry_database, run_command
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,7 @@ class MySQLConnection(_Connection):
             db_engine if db_engine is not None else MySQLDaemon._default_storage_engine)
         self.use_compression = use_compression
         #
+        logger.debug("Connection string: {}".format(repr(self.connection_string)))
         self.engine = sa.create_engine(self.connection_string, echo=echo)
         try:
             self.db_schema = self._get_db_schema()

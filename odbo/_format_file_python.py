@@ -4,13 +4,13 @@
 - PyPy runs ~0.97 times faster, so not worth it.
 """
 from __future__ import print_function
+
+import logging
 import os
 import os.path as op
-import gzip
-import bz2
 import re
-import logging
-from datapkg import format_unprintable
+
+from kmtools import system_tools
 
 logger = logging.getLogger(__name__)
 
@@ -49,34 +49,15 @@ def decompress(
     # Uncompress file, applying function `fn`
     logger.debug("Uncompressing file '{}' into '{}'...".format(infile, outfile))
     fn = get_csv_line_formatter(sep, na_values, extra_substitutions)
-    try:
-        ifh = _open_compressed_file(infile, 'rb')
-    except:
-        raise
-    else:
+    with system_tools.open_compressed(infile, 'rb') as ifh:
         with open(outfile, 'wb') as ofh:
             while True:
                 data = ifh.read(64 * 1024 * 1024)
                 if not data:
                     break
                 ofh.write(fn(data))
-    finally:
-        ifh.close()
     assert op.isfile(outfile)
     return outfile
-
-
-def _open_compressed_file(filename, mode='rb'):
-    """Return file handle for the file `filename`.
-
-    Inferr compression from the extension.
-    """
-    if filename.endswith('.gz'):
-        return gzip.open(filename, mode)
-    elif filename.endswith('.bz2'):
-        return bz2.open(filename, mode)
-    else:
-        return open(filename, mode)
 
 
 def get_csv_line_formatter(sep, na_values=None, extra_substitutions=None):
@@ -132,34 +113,34 @@ def _get_rep_null(sep, na_values, extra_substitutions):
     """Returns a function which replaces `na_values` with '\\N'.
     """
     RE1 = re.compile(
-        format_unprintable(
+        system_tools.format_unprintable(
             '|'.join('{0}{1}{0}'.format(sep, na_value) for na_value in na_values))
         .encode('utf-8'))
-    RE1_OUT = format_unprintable('{0}{1}{0}'.format(sep, '\\N')).encode('utf-8')
+    RE1_OUT = system_tools.format_unprintable('{0}{1}{0}'.format(sep, '\\N')).encode('utf-8')
 
     RE2 = re.compile(
-        format_unprintable(
+        system_tools.format_unprintable(
             '|'.join('^{1}{0}'.format(sep, na_value) for na_value in na_values))
         .encode('utf-8'))
-    RE2_OUT = format_unprintable('{1}{0}'.format(sep, '\\N')).encode('utf-8')
+    RE2_OUT = system_tools.format_unprintable('{1}{0}'.format(sep, '\\N')).encode('utf-8')
 
     RE3 = re.compile(
-        format_unprintable(
+        system_tools.format_unprintable(
             '|'.join('{0}{1}$'.format(sep, na_value) for na_value in na_values))
         .encode('utf-8'))
-    RE3_OUT = format_unprintable('{0}{1}'.format(sep, '\\N')).encode('utf-8')
+    RE3_OUT = system_tools.format_unprintable('{0}{1}'.format(sep, '\\N')).encode('utf-8')
 
     RE4 = re.compile(
-        format_unprintable(
+        system_tools.format_unprintable(
             '|'.join('\r?\n{1}{0}'.format(sep, na_value) for na_value in na_values))
         .encode('utf-8'))
-    RE4_OUT = format_unprintable('\n{1}{0}'.format(sep, '\\N')).encode('utf-8')
+    RE4_OUT = system_tools.format_unprintable('\n{1}{0}'.format(sep, '\\N')).encode('utf-8')
 
     RE5 = re.compile(
-        format_unprintable(
+        system_tools.format_unprintable(
             '|'.join('{0}{1}\r?\n'.format(sep, na_value) for na_value in na_values))
         .encode('utf-8'))
-    RE5_OUT = format_unprintable('{0}{1}\n'.format(sep, '\\N')).encode('utf-8')
+    RE5_OUT = system_tools.format_unprintable('{0}{1}\n'.format(sep, '\\N')).encode('utf-8')
 
     def rep_null(line):
         line = RE1.sub(RE1_OUT, line)

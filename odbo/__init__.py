@@ -1,5 +1,4 @@
 # flake8: noqa
-from .utils import *
 from .table import MySQLTable
 from .connection import MySQLConnection
 from .daemon import MySQLDaemon, start_database

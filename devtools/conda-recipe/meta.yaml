@@ -1,7 +1,7 @@
 {% set version = "0.0.6" %}
 
 package:
-  name: datapkg
+  name: odbo
   version: {{ version }}
 
 source:
@@ -11,7 +11,7 @@ build:
   script: python setup.py install
   number: 0
   entry_points:
-    - datapkg = datapkg.__main__:main
+    - odbo = odbo.__main__:main
 
 requirements:
   build:
@@ -51,12 +51,12 @@ test:
     - pytest-logging
     - flake8
   imports:
-    - datapkg
+    - odbo
   commands:
-    - datapkg --help
-    - datapkg file2db --help
+    - odbo --help
+    - odbo file2db --help
 
 about:
-  home: http://kimlaborg.github.io/datapkg
+  home: http://kimlaborg.github.io/odbo
   license: MIT
   summary: Start and interact with databases through Python / Pandas.
