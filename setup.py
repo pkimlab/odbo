@@ -26,7 +26,7 @@ def read_md(file):
 
 setup(
     name='odbo',
-    version="0.0.6",
+    version="0.0.7",
     author='Alexey Strokach',
     author_email='alex.strokach@utoronto.ca',
     url="https://github.com/kimlaborg/odbo",
