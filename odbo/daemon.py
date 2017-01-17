@@ -3,16 +3,16 @@
 TODO: We should probably run this in a subprocess, so that `mysqld` logs
 appear concomitant with database commands.
 """
-import sys
+import atexit
+import logging
 import os
 import os.path as op
-import tempfile
-import logging
-import atexit
 import socket
+import sys
+import tempfile
 
 from kmtools.db_tools import make_connection_string
-from datapkg import utils
+from kmtools.system_tools import iter_stdout, start_subprocess
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +76,7 @@ class _Daemon:
         return make_connection_string(
             db_type=self.db_type,
             db_username='root',
+            db_password='',
             db_url=db_url,
             db_port=str(self.db_port),  # TODO: remove str() cast when updated
             db_schema=db_schema,
@@ -86,7 +87,13 @@ class _Daemon:
 # === MySQL / MariaDB ===
 
 class MySQLDaemon(_Daemon):
+    """MySQL deamon.
 
+    .. note::
+        For best OLAP performance, you should disable InnoDB and use only MyISAM (or Aria) tables,
+        setting ``key_buffer_size`` as large as possible.
+
+    """
     db_type = 'mysql'
     _default_storage_engine = 'MyISAM'
 
@@ -117,8 +124,8 @@ mysql_install_db --no-defaults --basedir={basedir} --datadir={datadir} \
 """.format(basedir=self.basedir, datadir=self.datadir)
         logger.debug('===== Initializing MySQL database... =====')
         logger.debug(system_command)
-        p = utils._start_subprocess(system_command)
-        for line in utils._iter_stdout(p):
+        p = start_subprocess(system_command)
+        for line in iter_stdout(p):
             logger.debug(line)
 
     def _format_kwargs(self, **kwargs):
@@ -150,7 +157,7 @@ mysql_install_db --no-defaults --basedir={basedir} --datadir={datadir} \
         if self._mysqld_process is not None:
             logger.info(
                 "MySQL is already running (pid: {}, socket: '{}')."
-                .format(self._mysqld_process, self.db_socket))
+                .format(self._mysqld_process.pid, self.db_socket))
             return
 
         logger.debug('===== Starting MySQL daemon... =====')
@@ -161,6 +168,7 @@ mysqld --no-defaults --basedir={basedir} --datadir={datadir} \
     --max_connections={max_connections} \
     --open_files_limit={open_files_limit} \
     --default_storage_engine={default_storage_engine} \
+    --key_buffer_size=1073741824 \
     {kwargs} \
 """.format(
             basedir=self.basedir,
@@ -174,8 +182,8 @@ mysqld --no-defaults --basedir={basedir} --datadir={datadir} \
         )
 
         logger.debug(system_command)
-        self._mysqld_process = utils._start_subprocess(system_command)
-        for line in utils._iter_stdout(self._mysqld_process):
+        self._mysqld_process = start_subprocess(system_command)
+        for line in iter_stdout(self._mysqld_process):
             logger.debug(line)
             if 'mysqld: ready for connections' in line:
                 break
@@ -187,7 +195,7 @@ mysqld --no-defaults --basedir={basedir} --datadir={datadir} \
             logger.debug("MySQL daemon is already shut down!")
             return
         self._mysqld_process.terminate()
-        for line in utils._iter_stdout(self._mysqld_process):
+        for line in iter_stdout(self._mysqld_process):
             logger.debug(line)
         logger.debug('mysqld poll: {}'.format(self._mysqld_process.poll()))
         logger.debug('mysqld returncode: {}'.format(self._mysqld_process.returncode))
@@ -202,6 +210,6 @@ create user 'root'@'%'; \
 grant all on *.* to 'root'@'%'; \
 flush privileges;" \
 """.format(db_socket=self.db_socket)
-        p = utils._start_subprocess(system_command)
-        for line in utils._iter_stdout(p):
+        p = start_subprocess(system_command)
+        for line in iter_stdout(p):
             logger.debug(line)

@@ -1,15 +1,17 @@
+import logging
 import os
 import os.path as op
-import tempfile
-import datapkg
-import logging
-import psutil
-import subprocess
 import shlex
-import pytest
 import shutil
+import subprocess
+import tempfile
+
 import pandas as pd
-from datapkg import get_tablename
+import psutil
+import pytest
+
+import odbo
+from odbo import get_tablename
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +26,7 @@ class TestMySQL:
         os.makedirs(datadir, exist_ok=True)
         db_socket = op.abspath(op.join(cls.tempdir, 'mysql.sock'))
         # Start MariaDB
-        mysqld = datapkg.MySQLDaemon(
+        mysqld = odbo.MySQLDaemon(
             datadir=datadir,
             db_socket=db_socket,
         )
@@ -51,7 +53,7 @@ class TestMySQL:
         shared_folder = op.join(self.tempdir, 'share')
         connection_string = self.mysqld.get_connection_string(db_schema)
         logger.debug("connection_string: {}".format(connection_string))
-        self.db = datapkg.MySQLConnection(
+        self.db = odbo.MySQLConnection(
             connection_string=connection_string,
             shared_folder=shared_folder,
             storage_host=None,
@@ -73,7 +75,7 @@ class TestMySQL:
     def test_csv2sql_cli(self, input_file):
         """Test running csv2sql CLI."""
         system_command = (
-            "datapkg file2db --file '{}' --db '{}' --debug"
+            "odbo file2db --file '{}' --db '{}' --debug"
             .format(input_file, self.db.connection_string)
         )
         sp = subprocess.run(

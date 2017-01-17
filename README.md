@@ -1,14 +1,15 @@
-# DataPkg
+# odbo
 
-[![anaconda](https://anaconda.org/kimlab/datapkg/badges/version.svg?style=flat-square)](https://anaconda.org/kimlab/datapkg)
-[![docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square&?version=latest)](http://kimlaborg.github.io/datapkg)
-[![travis](https://img.shields.io/travis/kimlaborg/datapkg.svg?style=flat-square)](https://travis-ci.org/kimlaborg/datapkg)
-[![codecov](https://img.shields.io/codecov/c/github/kimlaborg/datapkg.svg?style=flat-square)](https://codecov.io/gh/kimlaborg/datapkg)
+[![anaconda](https://anaconda.org/kimlab/odbo/badges/version.svg?style=flat-square)](https://anaconda.org/kimlab/odbo)
+[![docs](https://img.shields.io/badge/docs-latest-blue.svg?style=flat-square&?version=latest)](http://kimlaborg.github.io/odbo)
+[![travis](https://img.shields.io/travis/kimlaborg/odbo.svg?style=flat-square)](https://travis-ci.org/kimlaborg/odbo)
+[![codecov](https://img.shields.io/codecov/c/github/kimlaborg/odbo.svg?style=flat-square)](https://codecov.io/gh/kimlaborg/odbo)
 
-DataPkg is a tool to simplify the distribution of pandas DataFrames as CSV and database files.
+odbo is a tool to simplify the distribution of pandas DataFrames as CSV and database files.
 
 It analyses a text file and spits out SQL that creates a database table and loads data into that table.
 
+It is similar to to the blaze [odo](https://github.com/blaze/odo) project, and hence carries a similar name. It was previously called "datapkg", but it seems that this name is [already taken].
 
 ## Examples
 
@@ -19,6 +20,7 @@ mysqld --no-defaults --basedir=$HOME/anaconda --datadir=$HOME/tmp/mysql_db
 
 ## TODO
 
+- [ ] Lower flake8 max-complexity to 10.
 - [ ] PostgreSQL support.
 - [ ] HDF5 support.
 - [ ] MariaDB CollumnStore support.

@@ -3,6 +3,8 @@
 *.bak
 
 # Folders
+build
+dist
 _build
 __pycache__
 *.egg-info

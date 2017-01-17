@@ -4,13 +4,13 @@
 - PyPy runs ~0.97 times faster, so not worth it.
 """
 from __future__ import print_function
+
+import logging
 import os
 import os.path as op
-import gzip
-import bz2
 import re
-import logging
-from datapkg import format_unprintable
+
+from kmtools import system_tools
 
 logger = logging.getLogger(__name__)
 
@@ -36,36 +36,26 @@ def decompress(
 
     if outfile is None:
         outfile = infile + '.tmp'
+
     if op.isfile(outfile):
         logger.debug("Decompressed file '{}' already exists!")
         if use_tmp:
-            logger.debug("Using...")
+            logger.debug("Using existing file...")
             return outfile
         else:
-            logger.debug("Removing...")
+            logger.debug("Removing existing file...")
             os.remove(outfile)
 
     # Uncompress file, applying function `fn`
     logger.debug("Uncompressing file '{}' into '{}'...".format(infile, outfile))
     fn = get_csv_line_formatter(sep, na_values, extra_substitutions)
-    try:
-        if ext == '.gz':
-            ifh = gzip.open(infile, 'rb')
-        elif ext == 'bz2':
-            ifh = bz2.open(infile, 'rb')
-        else:
-            ifh = open(infile, 'rb')
-    except:
-        raise
-    else:
+    with system_tools.open_compressed(infile, 'rb') as ifh:
         with open(outfile, 'wb') as ofh:
             while True:
                 data = ifh.read(64 * 1024 * 1024)
                 if not data:
                     break
                 ofh.write(fn(data))
-    finally:
-        ifh.close()
     assert op.isfile(outfile)
     return outfile
 
@@ -97,53 +87,11 @@ def get_csv_line_formatter(sep, na_values=None, extra_substitutions=None):
     #     else:
     #         return line
 
-    # def format_unprintable(string):
-    #     return string
-    #
     if not na_values or na_values == ['\\N']:
         def rep_null(line):
             return line
     else:
-        RE1 = re.compile(
-            format_unprintable(
-                '|'.join('{0}{1}{0}'.format(sep, na_value) for na_value in na_values))
-            .encode('utf-8'))
-        RE1_OUT = format_unprintable('{0}{1}{0}'.format(sep, '\\N')).encode('utf-8')
-
-        RE2 = re.compile(
-            format_unprintable(
-                '|'.join('^{1}{0}'.format(sep, na_value) for na_value in na_values))
-            .encode('utf-8'))
-        RE2_OUT = format_unprintable('{1}{0}'.format(sep, '\\N')).encode('utf-8')
-
-        RE3 = re.compile(
-            format_unprintable(
-                '|'.join('{0}{1}$'.format(sep, na_value) for na_value in na_values))
-            .encode('utf-8'))
-        RE3_OUT = format_unprintable('{0}{1}'.format(sep, '\\N')).encode('utf-8')
-
-        RE4 = re.compile(
-            format_unprintable(
-                '|'.join('\r?\n{1}{0}'.format(sep, na_value) for na_value in na_values))
-            .encode('utf-8'))
-        RE4_OUT = format_unprintable('\n{1}{0}'.format(sep, '\\N')).encode('utf-8')
-
-        RE5 = re.compile(
-            format_unprintable(
-                '|'.join('{0}{1}\r?\n'.format(sep, na_value) for na_value in na_values))
-            .encode('utf-8'))
-        RE5_OUT = format_unprintable('{0}{1}\n'.format(sep, '\\N')).encode('utf-8')
-
-        def rep_null(line):
-            line = RE1.sub(RE1_OUT, line)
-            line = RE1.sub(RE1_OUT, line)
-            line = RE2.sub(RE2_OUT, line)
-            line = RE3.sub(RE3_OUT, line)
-            line = RE4.sub(RE4_OUT, line)
-            line = RE5.sub(RE5_OUT, line)
-            for RE, RE_OUT in extra_substitutions:
-                line = RE.sub(RE_OUT, line)
-            return line
+        rep_null = _get_rep_null(sep, na_values, extra_substitutions)
 
     # Separator
     if sep == '\t':
@@ -161,6 +109,53 @@ def get_csv_line_formatter(sep, na_values=None, extra_substitutions=None):
     return csv_line_formatter
 
 
+def _get_rep_null(sep, na_values, extra_substitutions):
+    """Returns a function which replaces `na_values` with '\\N'.
+    """
+    RE1 = re.compile(
+        system_tools.format_unprintable(
+            '|'.join('{0}{1}{0}'.format(sep, na_value) for na_value in na_values))
+        .encode('utf-8'))
+    RE1_OUT = system_tools.format_unprintable('{0}{1}{0}'.format(sep, '\\N')).encode('utf-8')
+
+    RE2 = re.compile(
+        system_tools.format_unprintable(
+            '|'.join('^{1}{0}'.format(sep, na_value) for na_value in na_values))
+        .encode('utf-8'))
+    RE2_OUT = system_tools.format_unprintable('{1}{0}'.format(sep, '\\N')).encode('utf-8')
+
+    RE3 = re.compile(
+        system_tools.format_unprintable(
+            '|'.join('{0}{1}$'.format(sep, na_value) for na_value in na_values))
+        .encode('utf-8'))
+    RE3_OUT = system_tools.format_unprintable('{0}{1}'.format(sep, '\\N')).encode('utf-8')
+
+    RE4 = re.compile(
+        system_tools.format_unprintable(
+            '|'.join('\r?\n{1}{0}'.format(sep, na_value) for na_value in na_values))
+        .encode('utf-8'))
+    RE4_OUT = system_tools.format_unprintable('\n{1}{0}'.format(sep, '\\N')).encode('utf-8')
+
+    RE5 = re.compile(
+        system_tools.format_unprintable(
+            '|'.join('{0}{1}\r?\n'.format(sep, na_value) for na_value in na_values))
+        .encode('utf-8'))
+    RE5_OUT = system_tools.format_unprintable('{0}{1}\n'.format(sep, '\\N')).encode('utf-8')
+
+    def rep_null(line):
+        line = RE1.sub(RE1_OUT, line)
+        line = RE1.sub(RE1_OUT, line)
+        line = RE2.sub(RE2_OUT, line)
+        line = RE3.sub(RE3_OUT, line)
+        line = RE4.sub(RE4_OUT, line)
+        line = RE5.sub(RE5_OUT, line)
+        for RE, RE_OUT in extra_substitutions:
+            line = RE.sub(RE_OUT, line)
+        return line
+
+    return rep_null
+
+
 def main(infile, outfile, sep='\t', na_values=[], extra_substitutions=[]):
     if not na_values:
         na_values = ['', '\\N', '.', 'na']
@@ -173,6 +168,7 @@ def main(infile, outfile, sep='\t', na_values=[], extra_substitutions=[]):
         outfile=outfile)
     assert op.isfile(outfile)
     return 0
+
 
 if __name__ == '__main__':
     import argparse

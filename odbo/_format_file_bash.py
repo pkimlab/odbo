@@ -1,8 +1,12 @@
-"""Format (compressed) CSV file for import into an SQL database using Linux system commands."""
+"""Format (compressed) CSV file for import into an SQL database using Linux system commands.
+
+- This script seems to run ~1.6 times faster than the `python` version.
+"""
+import logging
 import os
 import os.path as op
-import logging
-from datapkg import run_command, format_unprintable
+
+from kmtools import system_tools
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +56,8 @@ def decompress(
         )
     )
     logger.debug(system_command)
-    run_command(system_command, shell=True)  # NB: sed is CPU-bound, no need to do remotely
+    # NB: sed is CPU-bound, no need to do remotely
+    system_tools.run_command(system_command, shell=True)
     assert op.isfile(outfile)
     return outfile
 
@@ -75,14 +80,14 @@ def get_sed_command(sep='\t', na_values=None, extra_substitutions=None):
         if na_value and na_value in "$.*[\\]^'\"":
             na_value = '\{}'.format(na_value)
         else:
-            na_value = format_unprintable(na_value)
+            na_value = system_tools.format_unprintable(na_value)
         system_command_body += (
             r"-e 's/{0}{1}{0}/{0}\\N{0}/g' "
             r"-e 's/{0}{1}{0}/{0}\\N{0}/g' "
             r"-e 's/^{1}{0}/\\N{0}/g' "
             r"-e 's/{0}{1}$/{0}\\N/g' "
             r"-e 's/{0}{1}\r$/{0}\\N/g' "
-            .format(format_unprintable(sep), na_value)
+            .format(system_tools.format_unprintable(sep), na_value)
         )
     return system_command_head + system_command_body
 

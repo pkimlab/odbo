@@ -1,25 +1,27 @@
+import logging
 import os
 import os.path as op
 import tempfile
 import time
+
 import pandas as pd
 import pytest
-import logging
-import datapkg
+
+import odbo
 
 logger = logging.getLogger(__name__)
 
 
 def test_csv_line_formatter():
     csv_line_formatter = (
-        datapkg._format_file_python.get_csv_line_formatter(sep=',', na_values=['', 'NS', '\\N'])
+        odbo._format_file_python.get_csv_line_formatter(sep=',', na_values=['', 'NS', '\\N'])
     )
     expected = b"\\N,\\N,\\N,\\N,\\N,\\N\n"
     actual = csv_line_formatter(b",,NS,\\N,,\n")
     assert expected == actual, (expected, actual)
 
 
-@pytest.mark.parametrize("_format_file", [datapkg._format_file_bash, datapkg._format_file_python])
+@pytest.mark.parametrize("_format_file", [odbo._format_file_bash, odbo._format_file_python])
 def test__format_file(_format_file):
     """Make sure that `_format_file` correctly converts null values to '\\N'."""
     infile = op.join(op.splitext(__file__)[0], 'CosmicSample.tsv.gz')
