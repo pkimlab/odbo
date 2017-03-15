@@ -1,0 +1,106 @@
+image: condaforge/linux-anvil:latest
+
+stages:
+  - build
+  - test
+  - deploy
+
+# === Variables ===
+
+.py35: &py35
+  PYTHON_VERSION: "3.5"
+
+.py36: &py36
+  PYTHON_VERSION: "3.6"
+
+# === Build ===
+
+.conda_configure: &conda_configure
+  before_script:
+    # Conda configure
+    - conda config --append channels bioconda
+    - conda config --append channels kimlab
+    - conda config --append channels ostrokach
+
+.build: &build
+  stage: build
+  <<: *conda_configure
+  script:
+    # Build conda packages
+    - cd $CI_PROJECT_DIR/devtools/conda-recipe
+    - conda build --python $PYTHON_VERSION .
+    # Save built packages as artifacts
+    - mkdir $CI_PROJECT_DIR/conda-bld
+    - cp -r /opt/conda/conda-bld/{linux-64,noarch} $CI_PROJECT_DIR/conda-bld
+  artifacts:
+    paths:
+    - conda-bld
+
+build-py35:
+  <<: *build
+  variables:
+    <<: [*py35]
+
+build-py36:
+  <<: *build
+  variables:
+    <<: [*py36]
+
+# === Test ===
+
+.conda_install: &conda_install
+  before_script:
+    # Conda configure
+    - conda config --append channels bioconda
+    - conda config --append channels kimlab
+    - conda config --append channels ostrokach
+    # Conda install
+    - cp -r $CI_PROJECT_DIR/conda-bld/* /opt/conda/conda-bld/
+    - conda index /opt/conda/conda-bld/
+    - conda install -yq 'requests<2.12'
+    - conda install -yq --use-local $CI_PROJECT_NAME]
+
+test-docs:
+  stage: test
+  <<: *conda_install
+  script:
+    - pip install -q sphinx sphinx_rtd_theme recommonmark
+    - sphinx-build docs public
+  artifacts:
+    paths:
+    - public
+
+.test: &test
+  stage: test
+  <<: *conda_install
+  script:
+    - pip install pytest pytest_cov
+    - flake8
+    - py.test
+
+test-py35:
+  <<: *test
+  dependencies:
+    - build-py35
+
+test-py36:
+  <<: *test
+  dependencies:
+    - build-py36
+
+# === Deploy ===
+
+.deploy: &deploy
+  stage: deploy
+  script:
+    - anaconda -t $ANACONDA_TOKEN upload $CI_PROJECT_DIR/conda-bld/linux-64/*.tar.bz2 -u $CI_PROJECT_NAMESPACE --force
+
+deploy-py35:
+  <<: *deploy
+  dependencies:
+    - build-py35
+
+deploy-py36:
+  <<: *deploy
+  dependencies:
+    - build-py36
