@@ -37,8 +37,8 @@ def start_mysql_database(
             logger.info('Starting MySQL database...')
             mysqld.install_db()
             mysqld.start()
-            if allow_external_connections:
-                mysqld.allow_external_connections()
+            # if allow_external_connections:
+            #     mysqld.allow_external_connections()
         except Exception as e:
             logger.error(
                 "Failed to start database beacuse of error:\n    {}: {}".format(type(e), e))
@@ -76,7 +76,7 @@ class _Daemon:
         return make_connection_string(
             db_type=self.db_type,
             db_username='root',
-            db_password='',
+            db_password='rootpass',
             db_url=db_url,
             db_port=str(self.db_port),  # TODO: remove str() cast when updated
             db_schema=db_schema,
@@ -160,6 +160,20 @@ mysql_install_db --no-defaults --basedir={basedir} --datadir={datadir} \
                 .format(self._mysqld_process.pid, self.db_socket))
             return
 
+        init_file = tempfile.NamedTemporaryFile()
+        init_file_contents = """\
+-- Create root password
+ALTER USER 'root'@'localhost' IDENTIFIED BY 'rootpass';
+
+-- Allow external connections
+DROP USER IF EXISTS 'root'@'%';
+CREATE USER 'root'@'%' IDENTIFIED BY 'rootpass';
+GRANT ALL ON *.* TO 'root'@'%';
+FLUSH PRIVILEGES;
+        """
+        with open(init_file.name, 'wt') as ofh:
+            ofh.write(init_file_contents)
+
         logger.debug('===== Starting MySQL daemon... =====')
         # --delay-key-write=OFF --query-cache-size=0
         system_command = """\
@@ -169,6 +183,7 @@ mysqld --no-defaults --basedir={basedir} --datadir={datadir} \
     --open_files_limit={open_files_limit} \
     --default_storage_engine={default_storage_engine} \
     --key_buffer_size=1073741824 \
+    --init-file='{init_file}' \
     {kwargs} \
 """.format(
             basedir=self.basedir,
@@ -178,6 +193,7 @@ mysqld --no-defaults --basedir={basedir} --datadir={datadir} \
             max_connections=max_connections,
             open_files_limit=open_files_limit,
             default_storage_engine=default_storage_engine,
+            init_file=init_file,
             kwargs=self._format_kwargs(**kwargs),
         )
 
@@ -201,15 +217,3 @@ mysqld --no-defaults --basedir={basedir} --datadir={datadir} \
         logger.debug('mysqld returncode: {}'.format(self._mysqld_process.returncode))
         assert self._mysqld_process.poll() is not None
         self._mysqld_process = None
-
-    def allow_external_connections(self):
-        system_command = """\
-mysql -u root --socket {db_socket} -e "\
-drop user if exists 'root'@'%';
-create user 'root'@'%'; \
-grant all on *.* to 'root'@'%'; \
-flush privileges;" \
-""".format(db_socket=self.db_socket)
-        p = start_subprocess(system_command)
-        for line in iter_stdout(p):
-            logger.debug(line)
