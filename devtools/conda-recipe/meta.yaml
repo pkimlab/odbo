@@ -8,7 +8,7 @@ source:
   path: ../../
 
 build:
-  script: python setup.py install
+  script: $PYTHON setup.py install --single-version-externally-managed --record=record.txt
   number: 0
   entry_points:
     - odbo = odbo.__main__:main
