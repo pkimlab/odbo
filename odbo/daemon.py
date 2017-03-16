@@ -193,7 +193,7 @@ mysqld --no-defaults --basedir={basedir} --datadir={datadir} \
             max_connections=max_connections,
             open_files_limit=open_files_limit,
             default_storage_engine=default_storage_engine,
-            init_file=init_file,
+            init_file=init_file.name,
             kwargs=self._format_kwargs(**kwargs),
         )
 
