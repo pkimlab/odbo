@@ -62,32 +62,40 @@ build-py36:
 
 # === Test ===
 
-.test: &test
+.docs: &docs
   stage: test
   script:
     # Conda install
     - cp -r $CI_PROJECT_DIR/conda-bld/* /opt/conda/conda-bld/
     - conda index /opt/conda/conda-bld/
     - conda install -y -q --use-local "python=$PYTHON_VERSION" $CI_PROJECT_NAME >/dev/null
-    # Test
-    - pip install -q flake8 pytest pytest-cov codecov hypothesis
-    - flake8
-    - py.test
-    - codecov -t $CODECOV_TOKEN
+    # Build docs
+    - conda install -yq nbconvert ipython ipykernel pandoc
+    - pip install -q sphinx sphinx_rtd_theme recommonmark nbsphinx
+    - sphinx-build docs public
 
-test-py35:
-  <<: [*conda_configure, *test]
-  dependencies:
-    - build-py35
-  variables:
-    <<: [*py35]
-
-test-py36:
-  <<: [*conda_configure, *test]
+pages:
+  <<: [*conda_configure, *docs]
   dependencies:
     - build-py36
   variables:
     <<: [*py36]
+  except:
+    - master
+
+pages:
+  <<: [*conda_configure, *docs]
+  dependencies:
+    - build-py36
+  variables:
+    <<: [*py36]
+  only:
+    - master
+  except:
+    - triggers
+  artifacts:
+    paths:
+    - public
 
 # === Pages ===
 
