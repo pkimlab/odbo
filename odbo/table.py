@@ -91,7 +91,7 @@ ADD COLUMN {column_name} BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST
         if p1.returncode:
             raise Exception("Failed to compress table (returncode = {})".format(p1.returncode))
         # Recreate indexes
-        system_command = "myisamchk -rq '{}'".format(index_file)
+        system_command = "myisamchk -rq --sort-index --analyze '{}'".format(index_file)
         logger.debug("system_command: '{}'".format(system_command))
         p2 = subprocess.run(
             shlex.split(system_command), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
