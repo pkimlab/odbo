@@ -3,6 +3,7 @@ import logging
 import os
 import os.path as op
 from collections import Counter
+from textwrap import dedent
 
 import pandas as pd
 import sqlalchemy as sa
@@ -39,16 +40,21 @@ class MySQLConnection(_Connection):
     Much faster than pandas ``df.to_sql(...)``.
     """
 
-    def __init__(
-            self, connection_string, shared_folder, storage_host, datadir=None,
-            echo=False, db_engine=None, use_compression=False):
+    def __init__(self,
+                 connection_string,
+                 shared_folder,
+                 storage_host,
+                 datadir=None,
+                 echo=False,
+                 db_engine=None,
+                 use_compression=False):
         self.connection_string = connection_string
         self.shared_folder = op.abspath(shared_folder)
         os.makedirs(self.shared_folder, exist_ok=True)
         self.storage_host = storage_host
         self.datadir = datadir
-        self.db_engine = (
-            db_engine if db_engine is not None else MySQLDaemon._default_storage_engine)
+        self.db_engine = (db_engine
+                          if db_engine is not None else MySQLDaemon._default_storage_engine)
         self.use_compression = use_compression
         #
         logger.debug("Connection string: {}".format(repr(self.connection_string)))
@@ -70,8 +76,7 @@ class MySQLConnection(_Connection):
         return set(pd.read_sql_query('show databases;', self.engine)['Database'])
 
     @retry_database
-    def create_db_table(
-            self, tablename, df, dtypes, empty=True, if_exists='replace'):
+    def create_db_table(self, tablename, df, dtypes, empty=True, if_exists='replace'):
         """Create a table `tablename` in the database.
 
         If `empty` == True, do not load any data. Otherwise,
@@ -82,52 +87,58 @@ class MySQLConnection(_Connection):
         df.to_sql(tablename, self.engine, dtype=dtypes, index=False, if_exists=if_exists)
         # Change storage engine
         if self.db_engine != MySQLDaemon._default_storage_engine:
-            self.engine.execute(
-                'ALTER TABLE {tablename} ENGINE={db_engine};'  # ROW_FORMAT = FIXED
-                .format(tablename=tablename, db_engine=self.db_engine))
+            # ROW_FORMAT = FIXED
+            self.engine.execute(f'ALTER TABLE {tablename} ENGINE={self.db_engine};')
         # Set compression
         if self.use_compression and self.db_engine == 'InnoDB':
-            self.engine.execute(
-                'ALTER TABLE {tablename} ROW_FORMAT=COMPRESSED;'.format(tablename=tablename))
+            self.engine.execute(f'ALTER TABLE {tablename} ROW_FORMAT=COMPRESSED;')
 
-    def load_file_to_database(
-            self, tsv_filepath, tablename, sep, quotechar='"', quoting=csv.QUOTE_MINIMAL,
-            skiprows=1):
+    def load_file_to_database(self,
+                              tsv_filepath,
+                              tablename,
+                              sep,
+                              quotechar='"',
+                              quoting=csv.QUOTE_MINIMAL,
+                              skiprows=1):
         logger.debug("Loading data into MySQL table: '{}'...".format(tablename))
 
         # Database options
-        db_params = parse_connection_string(self.connection_string)
+        db_opts = parse_connection_string(self.connection_string)
 
         # Run
-        if db_params['db_socket']:
-            header = "--socket={db_socket}".format(**db_params)
-        elif db_params['db_password']:
-            header = "-h {db_url} -P {db_port} -p{db_password}".format(**db_params)
+        if db_opts.socket:
+            header = f"--socket={db_opts.socket}"
+        elif db_opts.password:
+            header = f"-h {db_opts.url} -P {db_opts.port} -p{db_opts.password}"
         else:
-            header = "-h {db_url} -P {db_port}".format(**db_params)
+            header = f"-h {db_opts.url} -P {db_opts.port}"
 
         if quotechar == '"':
             quotechar = '\\"'
-        if (quoting is None or
-                (quoting == csv.QUOTE_MINIMAL or quoting == 0) or
-                (quoting == csv.QUOTE_NONNUMERIC or quoting == 2)):
+        if (quoting is None or (quoting == csv.QUOTE_MINIMAL or quoting == 0) or
+            (quoting == csv.QUOTE_NONNUMERIC or quoting == 2)):
             quoting = """optionally enclosed by '{}'""".format(quotechar)
         elif (quoting == csv.QUOTE_ALL or quoting == 3):
             quoting = """enclosed by '{}'""".format(quotechar)
         else:
             quoting = ""
-        system_command = """\
-mysql --local-infile {header} -u {db_username} {db_schema} -e \
-"load data local infile '{tsv_filepath}' into table `{tablename}` \
-fields terminated by {sep} {quoting} ignore {skiprows} lines; \
- show warnings;" \
-""".format(header=header, tsv_filepath=tsv_filepath, tablename=tablename, skiprows=skiprows,
-           sep=repr(sep), quoting=quoting, **db_params)
+        system_command = dedent(f"""\
+            mysql --local-infile {header} -u {db_opts.username} {db_opts.schema} -e
+            "load data local infile '{tsv_filepath}' into table `{tablename}`
+            fields terminated by {repr(sep)} {quoting} ignore {skiprows} lines;
+            show warnings;"
+            """).replace('\n', ' ')
         run_command(system_command)
 
-    def import_file(
-            self, file, tablename=None, dtypes=None, extra_dtypes=None,
-            extra_substitutions=None, use_tmp=False, keep_tmp=False, **csv_opts):
+    def import_file(self,
+                    file,
+                    tablename=None,
+                    dtypes=None,
+                    extra_dtypes=None,
+                    extra_substitutions=None,
+                    use_tmp=False,
+                    keep_tmp=False,
+                    **csv_opts):
         """Load file `file` into database table `tablename`.
 
         Parameters
@@ -156,8 +167,11 @@ fields terminated by {sep} {quoting} ignore {skiprows} lines; \
         if '.vcf' in op.basename(file).lower():
             extra_substitutions.append('/^##/d')
         outfile = decompress(
-            infile=file, sep=csv_opts['sep'], na_values=csv_opts['na_values'],
-            extra_substitutions=extra_substitutions, use_tmp=use_tmp)
+            infile=file,
+            sep=csv_opts['sep'],
+            na_values=csv_opts['na_values'],
+            extra_substitutions=extra_substitutions,
+            use_tmp=use_tmp)
 
         # Get column types and create a dataframe
         if dtypes is None:
@@ -166,9 +180,8 @@ fields terminated by {sep} {quoting} ignore {skiprows} lines; \
             dtypes = {format_columns(k): v for k, v in dtypes.items()}
             if extra_dtypes:
                 if set(extra_dtypes.keys()) - set(dtypes.keys()):
-                    logger.warning(
-                        "The following dtypes were not applied: ({})"
-                        .format(set(extra_dtypes.keys()) - set(dtypes.keys())))
+                    logger.warning("The following dtypes were not applied: ({})"
+                                   .format(set(extra_dtypes.keys()) - set(dtypes.keys())))
                 dtypes = {**dtypes, **extra_dtypes}
         else:
             df, _ = get_file_dtypes(outfile, nrows=0, **csv_opts)
@@ -182,9 +195,8 @@ fields terminated by {sep} {quoting} ignore {skiprows} lines; \
             db_skiprows = csv_opts.get('skiprows', 0) + 1  # skip the header
         else:
             db_skiprows = csv_opts.get('skiprows', 0)
-        self.load_file_to_database(
-            outfile, tablename, csv_opts['sep'], csv_opts['quotechar'], csv_opts['quoting'],
-            db_skiprows)
+        self.load_file_to_database(outfile, tablename, csv_opts['sep'], csv_opts['quotechar'],
+                                   csv_opts['quoting'], db_skiprows)
 
         if not keep_tmp:
             try:
@@ -192,12 +204,22 @@ fields terminated by {sep} {quoting} ignore {skiprows} lines; \
             except FileNotFoundError:
                 pass
         return MySQLTable(
-            name=tablename, df=df[0:0], dtypes=dtypes, tempfile=outfile,
-            connection_string=self.connection_string, engine=self.engine, datadir=self.datadir)
+            name=tablename,
+            df=df[0:0],
+            dtypes=dtypes,
+            tempfile=outfile,
+            connection_string=self.connection_string,
+            engine=self.engine,
+            datadir=self.datadir)
 
-    def import_df(
-            self, df, tablename=None, dtypes=None, extra_dtypes=None, use_temp_file=True,
-            if_exists='replace', force=True):
+    def import_df(self,
+                  df,
+                  tablename=None,
+                  dtypes=None,
+                  extra_dtypes=None,
+                  use_temp_file=True,
+                  if_exists='replace',
+                  force=True):
         """Load dataframe `df` into database table `tablename`.
 
         Parameters
@@ -225,12 +247,17 @@ fields terminated by {sep} {quoting} ignore {skiprows} lines; \
         if use_temp_file:
             tsv_file = op.abspath(op.join(self.shared_folder, tablename + '.tsv'))
             if op.isfile(tsv_file) and not force:
-                logger.info("tempfile already exists: {}".format(tsv_file))
+                logger.info("tempfile already exists: %s", tsv_file)
             else:
                 df.to_csv(tsv_file, **MYSQL_CSV_OPTS)
             self.load_file_to_database(tsv_file, tablename, '\t', skiprows=1)
         else:
             tsv_file = None
         return MySQLTable(
-            name=tablename, df=df[0:0], dtypes=dtypes, tempfile=tsv_file,
-            connection_string=self.connection_string, engine=self.engine, datadir=self.datadir)
+            name=tablename,
+            df=df[0:0],
+            dtypes=dtypes,
+            tempfile=tsv_file,
+            connection_string=self.connection_string,
+            engine=self.engine,
+            datadir=self.datadir)

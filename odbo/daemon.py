@@ -10,8 +10,9 @@ import os.path as op
 import socket
 import sys
 import tempfile
+from textwrap import dedent
 
-from kmtools.db_tools import make_connection_string
+from kmtools.db_tools import ConOpts, make_connection_string
 from kmtools.system_tools import iter_stdout, start_subprocess
 
 logger = logging.getLogger(__name__)
@@ -25,8 +26,7 @@ def start_database(db_type, *args, **kwargs):
         return start_mysql_database(*args, **kwargs)
 
 
-def start_mysql_database(
-        db_data_dir, db_socket, db_port, allow_external_connections=True):
+def start_mysql_database(db_data_dir, db_socket, db_port, allow_external_connections=True):
     mysqld = MySQLDaemon(
         datadir=db_data_dir,
         db_socket=db_socket,
@@ -40,8 +40,8 @@ def start_mysql_database(
             # if allow_external_connections:
             #     mysqld.allow_external_connections()
         except Exception as e:
-            logger.error(
-                "Failed to start database beacuse of error:\n    {}: {}".format(type(e), e))
+            logger.error("Failed to start database beacuse of error:\n    {}: {}".format(
+                type(e), e))
             mysqld.stop()
     else:
         logger.info('MySQL database already running...')
@@ -50,7 +50,7 @@ def start_mysql_database(
 
 class _Daemon:
 
-    def get_connection_string(self, db_schema=None, db_url='localhost'):
+    def get_connection_string(self, db_schema=None, db_url='localhost') -> str:
         """Return database connection string (e.g. for sqlalchemy).
 
         Parameters
@@ -74,17 +74,11 @@ class _Daemon:
             db_socket = None
 
         return make_connection_string(
-            db_type=self.db_type,
-            db_username='root',
-            db_password='rootpass',
-            db_url=db_url,
-            db_port=str(self.db_port),  # TODO: remove str() cast when updated
-            db_schema=db_schema,
-            db_socket=db_socket,
-        )
+            ConOpts(self.db_type, 'root', 'rootpass', db_url, self.db_port, db_schema, db_socket))
 
 
 # === MySQL / MariaDB ===
+
 
 class MySQLDaemon(_Daemon):
     """MySQL deamon.
@@ -119,9 +113,9 @@ class MySQLDaemon(_Daemon):
         for log_file in log_files:
             if op.isfile(log_file):
                 os.remove(log_file)
-        system_command = """\
-mysql_install_db --no-defaults --basedir={basedir} --datadir={datadir} \
-""".format(basedir=self.basedir, datadir=self.datadir)
+        system_command = dedent(f"""\
+            mysql_install_db --no-defaults --basedir={self.basedir} --datadir={self.datadir}
+            """).strip()
         logger.debug('===== Initializing MySQL database... =====')
         logger.debug(system_command)
         p = start_subprocess(system_command)
@@ -139,64 +133,51 @@ mysql_install_db --no-defaults --basedir={basedir} --datadir={datadir} \
         kwargs_string = ''
         for x, y in kwargs.items():
             if y is None:
-                kwargs_string += ' --{}'.format(x)
+                kwargs_string += f' --{x}'
             else:
-                kwargs_string += ' --{}={}'.format(x, y)
+                kwargs_string += f' --{x}={y}'
         return kwargs_string
 
-    def start(
-            self,
-            default_storage_engine=None,
-            external_locking=None,
-            innodb_fast_shutdown=None,
-            open_files_limit=4096,
-            max_connections=150,
-            **kwargs):
+    def start(self,
+              default_storage_engine=None,
+              external_locking=None,
+              innodb_fast_shutdown=None,
+              open_files_limit=4096,
+              max_connections=150,
+              **kwargs):
         if default_storage_engine is None:
             default_storage_engine = self._default_storage_engine
         if self._mysqld_process is not None:
-            logger.info(
-                "MySQL is already running (pid: {}, socket: '{}')."
-                .format(self._mysqld_process.pid, self.db_socket))
+            logger.info("MySQL is already running (pid: {}, socket: '{}').".format(
+                self._mysqld_process.pid, self.db_socket))
             return
 
         init_file = tempfile.NamedTemporaryFile()
-        init_file_contents = """\
--- Create root password
-ALTER USER 'root'@'localhost' IDENTIFIED BY 'rootpass';
+        init_file_contents = dedent("""\
+            -- Create root password
+            ALTER USER 'root'@'localhost' IDENTIFIED BY 'rootpass';
 
--- Allow external connections
-DROP USER IF EXISTS 'root'@'%';
-CREATE USER 'root'@'%' IDENTIFIED BY 'rootpass';
-GRANT ALL ON *.* TO 'root'@'%';
-FLUSH PRIVILEGES;
-        """
+            -- Allow external connections
+            DROP USER IF EXISTS 'root'@'%';
+            CREATE USER 'root'@'%' IDENTIFIED BY 'rootpass';
+            GRANT ALL ON *.* TO 'root'@'%';
+            FLUSH PRIVILEGES;
+            """)
         with open(init_file.name, 'wt') as ofh:
             ofh.write(init_file_contents)
 
         logger.debug('===== Starting MySQL daemon... =====')
         # --delay-key-write=OFF --query-cache-size=0
-        system_command = """\
-mysqld --no-defaults --basedir={basedir} --datadir={datadir} \
-    --socket='{db_socket}' --port={db_port} \
-    --max_connections={max_connections} \
-    --open_files_limit={open_files_limit} \
-    --default_storage_engine={default_storage_engine} \
-    --key_buffer_size=1073741824 \
-    --init-file='{init_file}' \
-    {kwargs} \
-""".format(
-            basedir=self.basedir,
-            datadir=self.datadir,
-            db_socket=self.db_socket,
-            db_port=self.db_port,
-            max_connections=max_connections,
-            open_files_limit=open_files_limit,
-            default_storage_engine=default_storage_engine,
-            init_file=init_file.name,
-            kwargs=self._format_kwargs(**kwargs),
-        )
-
+        system_command = dedent(f"""\
+            mysqld --no-defaults --basedir={self.basedir} --datadir={self.datadir}
+                --socket='{self.db_socket}' --port={self.db_port}
+                --max_connections={max_connections}
+                --open_files_limit={open_files_limit}
+                --default_storage_engine={default_storage_engine}
+                --key_buffer_size=1073741824
+                --init-file='{init_file.name}'
+                {self._format_kwargs(**kwargs)}
+            """).replace('\n', ' ')
         logger.debug(system_command)
         self._mysqld_process = start_subprocess(system_command)
         for line in iter_stdout(self._mysqld_process):

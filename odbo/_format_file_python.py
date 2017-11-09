@@ -15,8 +15,12 @@ from kmtools import system_tools
 logger = logging.getLogger(__name__)
 
 
-def decompress(
-        infile, sep='\t', na_values=None, extra_substitutions=None, use_tmp=False, outfile=None):
+def decompress(infile,
+               sep='\t',
+               na_values=None,
+               extra_substitutions=None,
+               use_tmp=False,
+               outfile=None):
     """Decompress `infile` to produce a file with name `${infile}.tmp`.
 
     Parameters
@@ -28,9 +32,8 @@ def decompress(
     SUPPORTED_EXTENSIONS = ['.gz', '.bz2']
 
     # File is not compressed, do nothing
-    if ((ext not in SUPPORTED_EXTENSIONS) and
-            (not na_values or na_values == ['\\N']) and
-            (not extra_substitutions)):
+    if (ext not in SUPPORTED_EXTENSIONS and (not na_values or na_values == ['\\N']) and
+            not extra_substitutions):
         logger.debug("No need to process input file '{}'".format(infile))
         return infile
 
@@ -88,6 +91,7 @@ def get_csv_line_formatter(sep, na_values=None, extra_substitutions=None):
     #         return line
 
     if not na_values or na_values == ['\\N']:
+
         def rep_null(line):
             return line
     else:
@@ -95,9 +99,11 @@ def get_csv_line_formatter(sep, na_values=None, extra_substitutions=None):
 
     # Separator
     if sep == '\t':
+
         def rep_sep(line):
             return line
     else:
+
         def rep_sep(line):
             return line.replace(sep.encode('utf-8'), b'\t')
 
@@ -114,20 +120,17 @@ def _get_rep_null(sep, na_values, extra_substitutions):
     """
     RE1 = re.compile(
         system_tools.format_unprintable(
-            '|'.join('{0}{1}{0}'.format(sep, na_value) for na_value in na_values))
-        .encode('utf-8'))
+            '|'.join('{0}{1}{0}'.format(sep, na_value) for na_value in na_values)).encode('utf-8'))
     RE1_OUT = system_tools.format_unprintable('{0}{1}{0}'.format(sep, '\\N')).encode('utf-8')
 
     RE2 = re.compile(
         system_tools.format_unprintable(
-            '|'.join('^{1}{0}'.format(sep, na_value) for na_value in na_values))
-        .encode('utf-8'))
+            '|'.join('^{1}{0}'.format(sep, na_value) for na_value in na_values)).encode('utf-8'))
     RE2_OUT = system_tools.format_unprintable('{1}{0}'.format(sep, '\\N')).encode('utf-8')
 
     RE3 = re.compile(
         system_tools.format_unprintable(
-            '|'.join('{0}{1}$'.format(sep, na_value) for na_value in na_values))
-        .encode('utf-8'))
+            '|'.join('{0}{1}$'.format(sep, na_value) for na_value in na_values)).encode('utf-8'))
     RE3_OUT = system_tools.format_unprintable('{0}{1}'.format(sep, '\\N')).encode('utf-8')
 
     RE4 = re.compile(

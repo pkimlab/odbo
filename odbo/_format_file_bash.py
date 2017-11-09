@@ -11,8 +11,12 @@ from kmtools import system_tools
 logger = logging.getLogger(__name__)
 
 
-def decompress(
-        infile, sep='\t', na_values=None, extra_substitutions=None, use_tmp=False, outfile=None):
+def decompress(infile,
+               sep='\t',
+               na_values=None,
+               extra_substitutions=None,
+               use_tmp=False,
+               outfile=None):
     """Decompress `infile` to produce a file with name `${infile}.tmp`.
 
     Parameters
@@ -28,9 +32,8 @@ def decompress(
     else:
         executable = 'cat'
 
-    if (executable.strip() == 'cat' and
-            (not na_values or na_values == ['\\N']) and
-            (not extra_substitutions)):
+    if (executable.strip() == 'cat' and (not na_values or na_values == ['\\N']) and
+            not extra_substitutions):
         logger.debug("No need to process input file '{}'".format(infile))
         return infile
 
@@ -46,15 +49,8 @@ def decompress(
             os.remove(outfile)
 
     sed_command = get_sed_command(sep, na_values, extra_substitutions)
-
-    system_command = (
-        "{executable} '{infile}' {sed_commad} > '{outfile}'".format(
-            executable=executable,
-            infile=infile,
-            sed_commad=('| ' + sed_command) if sed_command else '',
-            outfile=outfile,
-        )
-    )
+    sed_command = ('| ' + sed_command) if sed_command else ''
+    system_command = f"{executable} '{infile}' {sed_command} > '{outfile}'"
     logger.debug(system_command)
     # NB: sed is CPU-bound, no need to do remotely
     system_tools.run_command(system_command, shell=True)
@@ -81,14 +77,12 @@ def get_sed_command(sep='\t', na_values=None, extra_substitutions=None):
             na_value = '\{}'.format(na_value)
         else:
             na_value = system_tools.format_unprintable(na_value)
-        system_command_body += (
-            r"-e 's/{0}{1}{0}/{0}\\N{0}/g' "
-            r"-e 's/{0}{1}{0}/{0}\\N{0}/g' "
-            r"-e 's/^{1}{0}/\\N{0}/g' "
-            r"-e 's/{0}{1}$/{0}\\N/g' "
-            r"-e 's/{0}{1}\r$/{0}\\N/g' "
-            .format(system_tools.format_unprintable(sep), na_value)
-        )
+        system_command_body += (r"-e 's/{0}{1}{0}/{0}\\N{0}/g' "
+                                r"-e 's/{0}{1}{0}/{0}\\N{0}/g' "
+                                r"-e 's/^{1}{0}/\\N{0}/g' "
+                                r"-e 's/{0}{1}$/{0}\\N/g' "
+                                r"-e 's/{0}{1}\r$/{0}\\N/g' ".format(
+                                    system_tools.format_unprintable(sep), na_value))
     return system_command_head + system_command_body
 
 
