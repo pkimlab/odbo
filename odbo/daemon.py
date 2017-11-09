@@ -175,6 +175,9 @@ class MySQLDaemon(_Daemon):
                 --open_files_limit={open_files_limit}
                 --default_storage_engine={default_storage_engine}
                 --key_buffer_size=1073741824
+                --character-set-server=utf8
+                --collation-server=utf8_bin
+                --explicit_defaults_for_timestamp
                 --init-file='{init_file.name}'
                 {self._format_kwargs(**kwargs)}
             """).replace('\n', ' ')
