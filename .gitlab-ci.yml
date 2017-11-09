@@ -10,9 +10,6 @@ stages:
 variables:
   PACKAGE_VERSION: 0.0.7
 
-.py35: &py35
-  PYTHON_VERSION: "3.5"
-
 .py36: &py36
   PYTHON_VERSION: "3.6"
 
@@ -41,7 +38,7 @@ variables:
   <<: *conda_configure
   script:
     # Build conda packages
-    - cd $CI_PROJECT_DIR/devtools/conda-recipe
+    - cd $CI_PROJECT_DIR/.conda
     - conda build --python $PYTHON_VERSION .
     # Save built packages as artifacts
     - mkdir $CI_PROJECT_DIR/conda-bld
@@ -49,11 +46,6 @@ variables:
   artifacts:
     paths:
     - conda-bld
-
-build-py35:
-  <<: *build
-  variables:
-    <<: [*py35]
 
 build-py36:
   <<: *build
@@ -74,13 +66,6 @@ build-py36:
     - flake8
     - py.test --cov="${SITE_PACKAGES}/${CI_PROJECT_NAME}"
   coverage: /^TOTAL.* (\d+\%)/
-
-test-py35:
-  <<: [*conda_configure, *test]
-  dependencies:
-    - build-py35
-  variables:
-    <<: [*py35]
 
 test-py36:
   <<: [*conda_configure, *test]
@@ -144,11 +129,6 @@ pages:
     - master
   except:
     - triggers
-
-deploy-py35:
-  <<: *deploy
-  dependencies:
-    - build-py35
 
 deploy-py36:
   <<: *deploy
