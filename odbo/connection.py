@@ -62,14 +62,13 @@ class MySQLConnection(_Connection):
         try:
             self.db_schema = self._get_db_schema()
         except sa.exc.OperationalError:
-            db_params = parse_connection_string(connection_string)
-            _schema = db_params['db_schema']
-            db_params['db_schema'] = ''
-            logger.debug("db_params: {}".format(db_params))
-            _connection_string = make_connection_string(**db_params)
-            logger.debug("_connection_string: {}".format(_connection_string))
+            db_opts = parse_connection_string(connection_string)
+            _db_opts = db_opts._replace(schema='')
+            logger.debug("_db_opts: %s", _db_opts)
+            _connection_string = make_connection_string(_db_opts)
+            logger.debug("_connection_string: %s", _connection_string)
             _engine = sa.create_engine(_connection_string, echo=echo)
-            _engine.execute('CREATE DATABASE `{}`'.format(_schema))
+            _engine.execute(f"CREATE DATABASE `{db_opts.schema}`")
             self.db_schema = self._get_db_schema()
 
     def _get_db_schema(self):
